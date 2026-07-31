@@ -25,6 +25,7 @@ export const SETTING_IDS = {
   autoExpandPreview: "setting-auto-expand-preview",
   keepPreviewsRunning: "setting-keep-previews-running",
   appBlueprint: "setting-app-blueprint",
+  projectSkills: "setting-project-skills",
   testingForNewApps: "setting-testing-for-new-apps",
   chatEventNotification: "setting-chat-event-notification",
   thinkingBudget: "setting-thinking-budget",
@@ -157,6 +158,22 @@ export const SETTINGS_SEARCH_INDEX: SearchableSettingItem[] = [
     ],
     sectionId: SECTION_IDS.workflow,
     sectionLabel: "Workflow",
+  },
+  {
+    id: SETTING_IDS.projectSkills,
+    label: "Project Skills",
+    description:
+      "Load skills from the app's .agents/skills directory so the agent can follow their instructions",
+    keywords: [
+      "skills",
+      "skill",
+      "SKILL.md",
+      "agent skills",
+      "project",
+      "instructions",
+    ],
+    sectionId: SECTION_IDS.ai,
+    sectionLabel: "AI",
   },
   {
     id: SETTING_IDS.testingForNewApps,

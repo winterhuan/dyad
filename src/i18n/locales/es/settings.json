@@ -92,6 +92,7 @@
     "high": "Alto",
     "maxChatTurns": "Máximo de Turnos de Chat en el Contexto",
     "maxChatTurnsDescription": "Limita cuántos turnos recientes de chat se incluyen en el contexto.",
+    "projectSkills": "Skills del proyecto",
     "selectMaxChatTurns": "Seleccionar turnos máximos",
     "maxToolCallSteps": "Máximo de Llamadas de Herramientas (Agente)",
     "maxToolCallStepsDescription": "Limita cuántas llamadas a herramientas puede hacer el agente antes de pausar.",

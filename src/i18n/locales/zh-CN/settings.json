@@ -92,6 +92,7 @@
     "high": "高",
     "maxChatTurns": "上下文中最大聊天轮数",
     "maxChatTurnsDescription": "限制上下文中包含的最近聊天轮数。",
+    "projectSkills": "项目技能",
     "selectMaxChatTurns": "选择最大轮数",
     "unlimited": "无限制",
     "turnCount_one": "{{count}} 轮",

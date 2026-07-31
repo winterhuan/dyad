@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
 import path from "node:path";
 
 const h = vi.hoisted(() => {
@@ -700,6 +701,121 @@ describe("chat:stream pi pipeline (integration)", () => {
       expect(harness.readAppFile("src/consented.txt")).toBe("consented\n");
     } finally {
       writeSettings({ agentToolConsents: { write_file: "always" } });
+    }
+  });
+
+  it("injects project skills into the provider prompt and executes read_skill", async () => {
+    const skillDir = path.join(
+      harness.appDir,
+      ".agents",
+      "skills",
+      "pdf-processing",
+    );
+    await fs.promises.mkdir(skillDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(skillDir, "SKILL.md"),
+      `---
+name: pdf-processing
+description: Extract text and tables from PDF files.
+---
+
+# PDF Processing
+
+Run ./scripts/process.py <input>.
+`,
+    );
+    let providerContexts: any[] = [];
+    faux.setResponses([
+      (context) => {
+        providerContexts.push(context);
+        return fauxAssistantMessage(
+          fauxToolCall("read_skill", { skill: "pdf-processing" }),
+          { stopReason: "toolUse" },
+        );
+      },
+      fauxAssistantMessage("SKILL_LOADED_OK"),
+    ]);
+
+    try {
+      const result = await harness.streamChat("use the pdf skill");
+
+      expect(result.eventsFor("chat:response:error")).toEqual([]);
+      const contextJson = JSON.stringify(providerContexts);
+      expect(contextJson).toContain("<available_skills>");
+      expect(contextJson).toContain("<name>pdf-processing</name>");
+      expect(contextJson).toContain("load the SKILL.md via read_skill");
+
+      const assistant = [...result.messages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      expect(assistant?.content).toContain(
+        '<dyad-read-skill name="pdf-processing"',
+      );
+      expect(assistant?.content).toContain("SKILL_LOADED_OK");
+      const toolResult = piMessages(assistant).find(
+        (message) => message.role === "toolResult",
+      );
+      expect(JSON.stringify(toolResult?.content)).toContain(
+        "Run ./scripts/process.py <input>.",
+      );
+      expect(piMessages(assistant).map((message) => message.role)).toEqual([
+        "assistant",
+        "toolResult",
+        "assistant",
+      ]);
+    } finally {
+      await fs.promises.rm(path.join(harness.appDir, ".agents"), {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("omits the skills catalog when enableProjectSkills is disabled", async () => {
+    const [disabledChat] = await harness.db
+      .insert(chats)
+      .values({ appId: harness.appId, chatMode: "local-agent" })
+      .returning();
+    const skillDir = path.join(
+      harness.appDir,
+      ".agents",
+      "skills",
+      "pdf-processing",
+    );
+    await fs.promises.mkdir(skillDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(skillDir, "SKILL.md"),
+      `---
+name: pdf-processing
+description: Extract text and tables from PDF files.
+---
+
+# PDF Processing
+`,
+    );
+    writeSettings({ enableProjectSkills: false });
+    let providerContexts: any[] = [];
+    faux.setResponses([
+      (context) => {
+        providerContexts.push(context);
+        return fauxAssistantMessage("SKILLS_DISABLED_OK");
+      },
+    ]);
+
+    try {
+      const result = await harness.streamChat("no skills please", {
+        chatId: disabledChat.id,
+      });
+
+      expect(result.eventsFor("chat:response:error")).toEqual([]);
+      const contextJson = JSON.stringify(providerContexts);
+      expect(contextJson).not.toContain("<available_skills>");
+    } finally {
+      writeSettings({ enableProjectSkills: undefined });
+      await fs.promises.rm(path.join(harness.appDir, ".agents"), {
+        recursive: true,
+        force: true,
+      });
     }
   });
 });

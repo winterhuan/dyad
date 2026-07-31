@@ -10,6 +10,8 @@ import {
   getSupabaseAvailableSystemPrompt,
   SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT,
 } from "../../prompts/supabase_prompt";
+import { buildSkillsCatalogBlock } from "../pi/skills/catalog";
+import { discoverProjectSkills } from "../pi/skills/discovery";
 import { buildNeonPromptForApp } from "../../neon_admin/neon_prompt_context";
 import { getDyadAppPath } from "../../paths/paths";
 import { detectFrameworkType } from "../utils/framework_utils";
@@ -106,6 +108,15 @@ export function registerTokenCountHandlers() {
       } else {
         // Neon projects don't need Supabase (already handled above).
         systemPrompt += "\n\n" + SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT;
+      }
+
+      if (storedSettings.enableProjectSkills !== false) {
+        const skillsBlock = buildSkillsCatalogBlock(
+          await discoverProjectSkills(getDyadAppPath(chat.app.path)),
+        );
+        if (skillsBlock) {
+          systemPrompt += "\n\n" + skillsBlock;
+        }
       }
 
       const systemPromptTokens = estimateTokens(systemPrompt + supabaseContext);

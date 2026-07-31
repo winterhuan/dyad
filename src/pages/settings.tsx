@@ -35,6 +35,7 @@ import { ZoomSelector } from "@/components/ZoomSelector";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { DefaultChatModeSelector } from "@/components/DefaultChatModeSelector";
 import { ContextCompactionSwitch } from "@/components/ContextCompactionSwitch";
+import { ProjectSkillsSwitch } from "@/components/ProjectSkillsSwitch";
 import { WebAccessSettings } from "@/components/settings/WebAccessSettings";
 import { BlockUnsafeNpmPackagesSwitch } from "@/components/BlockUnsafeNpmPackagesSwitch";
 import { MultiWindowExperimentSwitch } from "@/components/MultiWindowExperimentSwitch";
@@ -461,6 +462,14 @@ export function AISettings() {
         <p className={hint}>
           Automatically compact long conversations to stay within context
           limits. Original messages are preserved in the app data directory.
+        </p>
+      </div>
+
+      <div id={SETTING_IDS.projectSkills} className="space-y-1.5">
+        <ProjectSkillsSwitch />
+        <p className={hint}>
+          Load skills from the app's .agents/skills directory so the agent can
+          follow their instructions on demand.
         </p>
       </div>
 

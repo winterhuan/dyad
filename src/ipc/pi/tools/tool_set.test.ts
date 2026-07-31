@@ -103,6 +103,25 @@ describe("buildPiToolSet", () => {
     expect(names).toContain("read_file");
   });
 
+  it("includes read_skill in every mode by default and hides it when disabled", () => {
+    for (const mode of ["local-agent", "ask", "plan"] as const) {
+      const names = buildPiToolSet({
+        chatMode: mode,
+        gatingContext: gatingContext(),
+        contextFactory: noopFactory,
+      }).map((tool) => tool.name);
+      expect(names).toContain("read_skill");
+    }
+
+    const disabled = buildPiToolSet({
+      chatMode: "local-agent",
+      gatingContext: gatingContext({ enableProjectSkills: false }),
+      contextFactory: noopFactory,
+    }).map((tool) => tool.name);
+    expect(disabled).not.toContain("read_skill");
+    expect(disabled).toContain("read_guide");
+  });
+
   it("only exposes web tools when web access is enabled and configured", () => {
     const disabled = buildPiToolSet({
       chatMode: "ask",

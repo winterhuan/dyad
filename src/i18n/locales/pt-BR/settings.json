@@ -92,6 +92,7 @@
     "high": "Alto",
     "maxChatTurns": "Máximo de Turnos de Chat no Contexto",
     "maxChatTurnsDescription": "Limita quantos turnos recentes de chat são incluídos no contexto.",
+    "projectSkills": "Skills do projeto",
     "selectMaxChatTurns": "Selecionar máximo de turnos",
     "unlimited": "Ilimitado",
     "turnCount_one": "{{count}} turno",

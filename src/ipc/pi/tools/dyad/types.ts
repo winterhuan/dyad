@@ -164,6 +164,13 @@ export interface AgentContext {
    */
   enableAppBlueprint?: boolean;
   /**
+   * Whether project skills (`.agents/skills/` in the app directory) are
+   * loaded this turn (settings.enableProjectSkills). Gates the `read_skill`
+   * tool. Undefined is treated as enabled so non-handler callers keep the
+   * tool.
+   */
+  enableProjectSkills?: boolean;
+  /**
    * Whether the app has opted into E2E testing (apps.testingEnabled). Gates the
    * `run_tests` tool, mirroring how `testingEnabled` gates the test-writing
    * guidance in the system prompt.

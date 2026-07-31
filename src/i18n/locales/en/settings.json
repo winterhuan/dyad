@@ -94,6 +94,7 @@
     "high": "High",
     "maxChatTurns": "Max Chat Turns in Context",
     "maxChatTurnsDescription": "Limits how many recent chat turns are included in context.",
+    "projectSkills": "Project Skills",
     "selectMaxChatTurns": "Select max turns",
     "maxToolCallSteps": "Max Tool Calls (Agent)",
     "maxToolCallStepsDescription": "Limits how many tool calls the agent can make before pausing.",

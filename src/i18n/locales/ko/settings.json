@@ -94,6 +94,7 @@
     "high": "높음",
     "maxChatTurns": "컨텍스트 내 최대 채팅 턴 수",
     "maxChatTurnsDescription": "컨텍스트에 포함되는 최근 채팅 턴 수를 제한합니다.",
+    "projectSkills": "프로젝트 스킬",
     "selectMaxChatTurns": "최대 턴 수 선택",
     "maxToolCallSteps": "최대 도구 호출 수 (에이전트)",
     "maxToolCallStepsDescription": "일시 중지되기 전 에이전트가 수행할 수 있는 도구 호출 횟수를 제한합니다.",

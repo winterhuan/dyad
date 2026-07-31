@@ -35,6 +35,7 @@ import { planningQuestionnaireTool } from "./planning_questionnaire";
 import { readChatTool } from "./read_chat";
 import { readFileTool } from "./read_file";
 import { readGuideTool } from "./read_guide";
+import { readSkillTool } from "./read_skill";
 import { readLogsTool } from "./read_logs";
 import { renameFileTool } from "./rename_file";
 import { runTestsTool } from "./run_tests";
@@ -83,6 +84,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   restartAppTool,
   rebuildAppTool,
   readGuideTool,
+  readSkillTool,
   // Plan mode tools
   planningQuestionnaireTool,
   writePlanTool,

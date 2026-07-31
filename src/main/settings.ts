@@ -71,6 +71,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   experiments: {},
   selectedChatMode: "local-agent",
   enableAppBlueprint: true,
+  enableProjectSkills: true,
   enableTestingForNewApps: false,
   enableAutoUpdate: true,
   releaseChannel: "stable",

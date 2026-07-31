@@ -14,6 +14,8 @@ import { getThemePromptById } from "../utils/theme_utils";
 import { getSupabaseAvailableSystemPrompt } from "../../prompts/supabase_prompt";
 import { registerTrustedIpcHandler } from "./trusted_handle";
 import { buildNeonPromptForApp } from "../../neon_admin/neon_prompt_context";
+import { buildSkillsCatalogBlock } from "../pi/skills/catalog";
+import { discoverProjectSkills } from "../pi/skills/discovery";
 import { getDyadAppPath } from "../../paths/paths";
 import { buildDyadMediaUrl } from "../../lib/dyadMediaUrl";
 import type { ChatStreamParams } from "@/ipc/types";
@@ -1344,6 +1346,17 @@ You may update the plan at \`${planPath}\` to mark your progress.`;
             neonDevelopmentBranchId: updatedChat.app.neonDevelopmentBranchId,
             selectedChatMode,
           }));
+      }
+
+      // Project skills are user-controlled content; the security-review
+      // branch keeps a minimal prompt and must not receive them.
+      if (!isSecurityReviewIntent && settings.enableProjectSkills !== false) {
+        const skillsBlock = buildSkillsCatalogBlock(
+          await discoverProjectSkills(piAppPath),
+        );
+        if (skillsBlock) {
+          piSystemPrompt += "\n\n" + skillsBlock;
+        }
       }
 
       let piPrompt = effectiveAiUserPrompt;

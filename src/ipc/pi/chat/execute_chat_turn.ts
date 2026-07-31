@@ -277,6 +277,7 @@ export async function executePiChatTurn(
     abortSignal: input.abortController.signal,
     enableAppBlueprint:
       input.settings.enableAppBlueprint && input.app.needsAppBlueprint,
+    enableProjectSkills: input.settings.enableProjectSkills !== false,
     rebuildAppToolAvailable:
       !readOnly &&
       !planModeOnly &&

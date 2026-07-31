@@ -68,4 +68,27 @@ describe("SETTINGS_SEARCH_INDEX", () => {
       sectionLabel: "Experiments",
     });
   });
+
+  it("includes the project skills toggle", () => {
+    expect(
+      SETTINGS_SEARCH_INDEX.find(
+        (item) => item.id === SETTING_IDS.projectSkills,
+      ),
+    ).toEqual({
+      id: SETTING_IDS.projectSkills,
+      label: "Project Skills",
+      description:
+        "Load skills from the app's .agents/skills directory so the agent can follow their instructions",
+      keywords: [
+        "skills",
+        "skill",
+        "SKILL.md",
+        "agent skills",
+        "project",
+        "instructions",
+      ],
+      sectionId: SECTION_IDS.ai,
+      sectionLabel: "AI",
+    });
+  });
 });

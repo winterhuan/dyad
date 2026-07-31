@@ -377,6 +377,9 @@ const BaseUserSettingsFields = {
   previewDeviceMode: DeviceModeSchema.optional(),
 
   enableAppBlueprint: z.boolean().optional(),
+  // When enabled, the local agent loads project skills from the app's
+  // `.agents/skills/` directory (Agent Skills standard).
+  enableProjectSkills: z.boolean().optional(),
   // When enabled, newly created apps opt into the AI E2E testing feature by
   // default (their `testing_enabled` column is seeded to true at creation).
   enableTestingForNewApps: z.boolean().optional(),
