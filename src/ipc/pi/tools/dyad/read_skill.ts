@@ -19,10 +19,13 @@ import { ToolDefinition, escapeXmlAttr } from "./types";
 import {
   discoverProjectSkills,
   parseSkillFrontmatter,
+  truncateUtf8,
 } from "../../skills/discovery";
 
 const MAX_RESOURCE_DEPTH = 4;
 const MAX_RESOURCE_ENTRIES = 200;
+/** Upper bound on the skill body returned to the model (UTF-8 bytes). */
+const MAX_SKILL_BODY_BYTES = 64 * 1024;
 const SKIPPED_RESOURCE_DIRS = new Set(["node_modules", ".git"]);
 
 const readSkillSchema = z.object({
@@ -71,12 +74,24 @@ export const readSkillTool: ToolDefinition<z.infer<typeof readSkillSchema>> = {
     }
 
     const parsed = parseSkillFrontmatter(content);
-    const body = parsed?.body || content.trim();
-    const resources = await listSkillResources(skill.directory);
+    // Fall back to the full file only when there is no frontmatter at all;
+    // an empty body must not resurrect the frontmatter.
+    let body = parsed ? parsed.body : content.trim();
+    let bodyTruncated = false;
+    if (Buffer.byteLength(body, "utf8") > MAX_SKILL_BODY_BYTES) {
+      body = truncateUtf8(body, MAX_SKILL_BODY_BYTES);
+      bodyTruncated = true;
+    }
+    const { entries: resources, truncated } = await listSkillResources(
+      skill.directory,
+    );
 
     const parts = [
       `<skill_content name="${escapeXmlAttr(skill.name)}">`,
       body,
+      ...(bodyTruncated
+        ? ["", `<!-- skill body truncated at ${MAX_SKILL_BODY_BYTES} bytes -->`]
+        : []),
       "",
       `Skill directory: ${skill.directory}`,
       "Relative paths in this skill are relative to the skill directory.",
@@ -85,10 +100,9 @@ export const readSkillTool: ToolDefinition<z.infer<typeof readSkillSchema>> = {
       const listing = resources
         .map((resource) => `    <file>${escapeXmlAttr(resource)}</file>`)
         .join("\n");
-      const truncation =
-        resources.length >= MAX_RESOURCE_ENTRIES
-          ? `\n    <!-- listing truncated at ${MAX_RESOURCE_ENTRIES} entries -->`
-          : "";
+      const truncation = truncated
+        ? `\n    <!-- listing truncated at ${MAX_RESOURCE_ENTRIES} entries -->`
+        : "";
       parts.push(
         "",
         `<skill_resources>\n${listing}${truncation}\n  </skill_resources>`,
@@ -100,14 +114,26 @@ export const readSkillTool: ToolDefinition<z.infer<typeof readSkillSchema>> = {
   },
 };
 
-/** List a skill directory's files as slash-relative paths, bounded. */
-export async function listSkillResources(directory: string): Promise<string[]> {
+export interface SkillResourceListing {
+  entries: string[];
+  truncated: boolean;
+}
+
+/**
+ * List a skill directory's files as slash-relative paths, bounded. Scans one
+ * entry past `MAX_RESOURCE_ENTRIES` so `truncated` distinguishes "exactly
+ * 200 entries" from "more than 200 entries".
+ */
+export async function listSkillResources(
+  directory: string,
+): Promise<SkillResourceListing> {
   const out: string[] = [];
   const queue: Array<{ dir: string; prefix: string; depth: number }> = [
     { dir: directory, prefix: "", depth: 0 },
   ];
+  const scanLimit = MAX_RESOURCE_ENTRIES + 1;
 
-  while (queue.length > 0 && out.length < MAX_RESOURCE_ENTRIES) {
+  while (queue.length > 0 && out.length < scanLimit) {
     const { dir, prefix, depth } = queue.shift()!;
     let entries: fs.Dirent[];
     try {
@@ -118,7 +144,7 @@ export async function listSkillResources(directory: string): Promise<string[]> {
     entries.sort((a, b) => a.name.localeCompare(b.name));
 
     for (const entry of entries) {
-      if (out.length >= MAX_RESOURCE_ENTRIES) {
+      if (out.length >= scanLimit) {
         break;
       }
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
@@ -139,5 +165,9 @@ export async function listSkillResources(directory: string): Promise<string[]> {
     }
   }
 
-  return out;
+  const truncated = out.length > MAX_RESOURCE_ENTRIES;
+  return {
+    entries: truncated ? out.slice(0, MAX_RESOURCE_ENTRIES) : out,
+    truncated,
+  };
 }

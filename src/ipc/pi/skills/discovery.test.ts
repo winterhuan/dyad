@@ -95,6 +95,22 @@ Body`);
   it("returns null when the frontmatter never closes", () => {
     expect(parseSkillFrontmatter("---\nname: my-skill\n")).toBeNull();
   });
+
+  it("does not treat a decorated line as the closing delimiter", () => {
+    const parsed = parseSkillFrontmatter(`---
+name: my-skill
+description: A skill
+--- not a closing marker
+Body`);
+    expect(parsed).toBeNull();
+  });
+
+  it("returns null when the frontmatter block exceeds the byte cap", () => {
+    const huge = "description: " + "x".repeat(20 * 1024) + "\n";
+    expect(
+      parseSkillFrontmatter(`---\nname: my-skill\n${huge}---\nBody`),
+    ).toBeNull();
+  });
 });
 
 describe("isValidSkillName", () => {
@@ -168,9 +184,96 @@ describe("discoverProjectSkills", () => {
 
   it("skips skills with unparseable frontmatter", async () => {
     writeSkill("pdf-processing", VALID_SKILL);
-    writeSkill("broken", "---\nname: broken\n--- no closing marker here\nBody");
+    writeSkill(
+      "broken",
+      "---\nname: broken\ndescription: Has a description\n--- not a closing marker here\nBody",
+    );
     const skills = await discoverProjectSkills(tempRoot);
     expect(skills.map((s) => s.name)).toEqual(["pdf-processing"]);
+  });
+
+  it("skips an oversized SKILL.md file", async () => {
+    writeSkill("pdf-processing", VALID_SKILL);
+    const bigDir = path.join(tempRoot, ".agents", "skills", "big");
+    fs.mkdirSync(bigDir, { recursive: true });
+    fs.writeFileSync(path.join(bigDir, "SKILL.md"), "x".repeat(600 * 1024));
+    const skills = await discoverProjectSkills(tempRoot);
+    expect(skills.map((s) => s.name)).toEqual(["pdf-processing"]);
+  });
+
+  it("truncates oversized skill descriptions", async () => {
+    const longDescription = "d".repeat(5 * 1024);
+    writeSkill(
+      "chatty",
+      `---
+name: chatty
+description: ${longDescription}
+---
+Body`,
+    );
+    const skills = await discoverProjectSkills(tempRoot);
+    expect(skills).toHaveLength(1);
+    expect(
+      Buffer.byteLength(skills[0]!.description, "utf8"),
+    ).toBeLessThanOrEqual(2048);
+  });
+
+  it("does not follow a skills-root symlink that escapes the app", async () => {
+    writeSkill("pdf-processing", VALID_SKILL);
+    const externalDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "dyad-skill-ext-"),
+    );
+    try {
+      fs.mkdirSync(path.join(externalDir, "skills", "external-skill"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(externalDir, "skills", "external-skill", "SKILL.md"),
+        "---\nname: external-skill\ndescription: Outside\n---\nBody",
+      );
+      fs.rmSync(path.join(tempRoot, ".agents"), {
+        recursive: true,
+        force: true,
+      });
+      fs.mkdirSync(path.join(tempRoot, ".agents"));
+      fs.symlinkSync(
+        path.join(externalDir, "skills"),
+        path.join(tempRoot, ".agents", "skills"),
+      );
+
+      const skills = await discoverProjectSkills(tempRoot);
+      expect(skills).toEqual([]);
+    } finally {
+      await fs.promises.rm(externalDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not follow a .agents symlink that escapes the app", async () => {
+    const externalDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "dyad-skill-ext-"),
+    );
+    try {
+      fs.mkdirSync(path.join(externalDir, "agents", "skills", "ext"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(externalDir, "agents", "skills", "ext", "SKILL.md"),
+        "---\nname: ext\ndescription: Outside\n---\nBody",
+      );
+      fs.rmSync(path.join(tempRoot, ".agents"), {
+        recursive: true,
+        force: true,
+      });
+      fs.symlinkSync(
+        path.join(externalDir, "agents"),
+        path.join(tempRoot, ".agents"),
+      );
+
+      const skills = await discoverProjectSkills(tempRoot);
+      expect(skills).toEqual([]);
+    } finally {
+      await fs.promises.rm(externalDir, { recursive: true, force: true });
+    }
   });
 
   it("loads skills whose name violates the rules with a warning", async () => {

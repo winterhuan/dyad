@@ -110,7 +110,14 @@ export function registerTokenCountHandlers() {
         systemPrompt += "\n\n" + SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT;
       }
 
-      if (storedSettings.enableProjectSkills !== false) {
+      // Mirror chat_stream_handlers: the security-review path builds a
+      // minimal, project-content-free prompt and must not receive the
+      // catalog, so token estimates must exclude it too (otherwise apps with
+      // many skills would spuriously trigger the context-limit banner).
+      if (
+        storedSettings.enableProjectSkills !== false &&
+        !req.input.startsWith("/security-review")
+      ) {
         const skillsBlock = buildSkillsCatalogBlock(
           await discoverProjectSkills(getDyadAppPath(chat.app.path)),
         );

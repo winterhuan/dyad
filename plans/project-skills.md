@@ -16,11 +16,21 @@ the existing built-in `read_guide` mechanism, and are gated by a new
   exactly `SKILL.md`, recursive, skipping `node_modules`, `.git`, and
   `dist`/`build` output directories. Cap recursion depth (4) and directory
   count (2000) to bound scanning cost in large trees.
+- Enforce project-scoped containment: the fully resolved skills root
+  (`realpath`) must stay inside the resolved app directory, so a `.agents` or
+  `skills` symlink pointing outside the project yields an empty catalog
+  (symlinks in intermediate path components are followed by the kernel, so
+  `lstat` alone is not enough; `Dirent` checks already skip symlinked
+  subdirectories and `SKILL.md` files).
+- Bound per-file cost: skip `SKILL.md` files larger than 512 KiB, reject
+  frontmatter blocks longer than 16 KiB, and truncate descriptions to 2 KiB
+  (UTF-8) at discovery time so the catalog and tool outputs cannot balloon.
 - Parse the YAML frontmatter between the leading `---` delimiters with a small
   lenient hand-rolled parser (no new `yaml` dependency): `name` and
   `description` are required; tolerate unquoted values containing colons,
   ignore unknown fields, and skip (with a log) skills whose description is
-  missing or unparseable.
+  missing or unparseable. The closing delimiter is exactly `---` on its own
+  line — a decorated line like `--- not a close` never closes the block.
 - Apply lenient name validation per the Agent Skills standard: 1-64 chars,
   lowercase `a-z0-9-`, no leading/trailing/consecutive hyphens. Warn and load
   anyway on violations; do not require the name to match the parent directory.
@@ -64,7 +74,13 @@ read_skill({
 
 - Enumerate the skill's supporting files (scripts, references, assets) into
   `<skill_resources>` by listing the skill directory recursively; do not read
-  their contents. Cap the listing (e.g. 200 entries) and note truncation.
+  their contents. Scan one entry past the 200-entry cap so `truncated` is a
+  separate flag — exactly 200 entries must not read as truncation.
+- Bound the returned body to 64 KiB (UTF-8, character-safe truncation) with an
+  explicit truncation comment, so a single oversized skill cannot bloat the
+  context. When the body is empty, return it empty: the frontmatter must not
+  be resurrected (fall back to the raw file only when there is no frontmatter
+  block at all).
 - Set `modifiesState: false`, `defaultConsent: "always"` (matching
   `read_guide`), `getConsentPreview` returning `Read skill: <name>`, and
   `buildXml` emitting `<dyad-read-skill name="..."></dyad-read-skill>`.
@@ -110,7 +126,10 @@ read_skill({
   prompt.
 - Keep `token_count_handlers.ts` in sync so token estimation includes the
   catalog at the same point (both sites call the same discovery module, so
-  they always agree).
+  they always agree), including the security-review exclusion: the token
+  count must skip the catalog when `input` starts with `/security-review`,
+  mirroring `isSecurityReviewIntent`, or apps with many skills would
+  spuriously trigger the context-limit banner.
 
 ## Setting
 
@@ -127,8 +146,9 @@ read_skill({
 
 ### New module: `src/ipc/pi/skills/`
 
-- `discovery.ts` — directory scan, frontmatter parse, validation, and the
-  `SkillInfo` type. Pure and unit-testable:
+- `discovery.ts` — directory scan (with symlink containment and file-size
+  caps), frontmatter parse, validation, `truncateUtf8`, and the `SkillInfo`
+  type. Pure and unit-testable:
   `discoverProjectSkills(appPath) -> SkillInfo[]`, no cache (scan cost is
   negligible for one bounded project directory).
 - `catalog.ts` — catalog-to-XML serializer with escaping, build instructions
@@ -136,6 +156,12 @@ read_skill({
 - `read_skill.ts` — `ToolDefinition` implementation (mirrors `read_guide.ts`
   structure); `execute` resolves the skill by calling `discoverProjectSkills(ctx.appPath)`
   itself, so the tool and the injected catalog always agree.
+
+### Tool location
+
+- `read_skill` lives at `src/ipc/pi/tools/dyad/read_skill.ts` (with the other
+  Dyad tools), not under `src/ipc/pi/skills/`; it imports discovery helpers
+  from `../skills/discovery`.
 
 ### Wiring
 

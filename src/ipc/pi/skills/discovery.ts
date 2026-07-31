@@ -31,6 +31,12 @@ export interface SkillInfo {
 
 const MAX_SKILL_DEPTH = 4;
 const MAX_SKILL_DIRECTORIES = 2000;
+/** Upper bound on a single SKILL.md read; larger files are skipped. */
+const MAX_SKILL_FILE_BYTES = 512 * 1024;
+/** Upper bound on the frontmatter block; longer blocks are rejected. */
+const MAX_FRONTMATTER_BYTES = 16 * 1024;
+/** Upper bound on a skill description before truncation (UTF-8 bytes). */
+const MAX_SKILL_DESCRIPTION_BYTES = 2048;
 const SKIPPED_DIR_NAMES = new Set(["node_modules", ".git", "dist", "build"]);
 
 const SKILL_MD_NAME = "SKILL.md";
@@ -51,10 +57,33 @@ export interface ParsedSkillFrontmatter {
 }
 
 /**
+ * Truncate `text` to at most `maxBytes` UTF-8 bytes without splitting a
+ * multi-byte character (binary search over character count).
+ */
+export function truncateUtf8(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) {
+    return text;
+  }
+  let end = text.length;
+  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") > maxBytes) {
+    end = Math.floor(end / 2);
+  }
+  // Grow back to the largest prefix within the limit (linear-ish, bounded).
+  while (
+    end < text.length &&
+    Buffer.byteLength(text.slice(0, end + 1), "utf8") <= maxBytes
+  ) {
+    end += 1;
+  }
+  return text.slice(0, end);
+}
+
+/**
  * Lenient frontmatter parser: extracts the leading `---`-delimited YAML block
  * as `key: value` lines. Tolerates unquoted values containing colons and
  * folded/block scalar continuations (indented lines append to the current
- * value). Returns null when the content has no frontmatter block.
+ * value). Returns null when the content has no frontmatter block, the block
+ * never closes, or the block exceeds `MAX_FRONTMATTER_BYTES`.
  */
 export function parseSkillFrontmatter(
   content: string,
@@ -70,11 +99,17 @@ export function parseSkillFrontmatter(
   let currentKey: string | undefined;
   const values: string[] = [];
   let closingIndex = -1;
+  let frontmatterBytes = lines[0].length + 1;
 
   for (let index = 1; index < lines.length; index++) {
     const line = lines[index];
     const trimmed = line.trim();
-    if (trimmed === "---" || trimmed.startsWith("--- ")) {
+    frontmatterBytes += line.length + 1;
+    if (frontmatterBytes > MAX_FRONTMATTER_BYTES) {
+      return null;
+    }
+    // The closing delimiter is exactly `---` on its own line.
+    if (trimmed === "---") {
       closingIndex = index;
       break;
     }
@@ -131,6 +166,29 @@ export async function discoverProjectSkills(
   appPath: string,
 ): Promise<SkillInfo[]> {
   const skillsRoot = path.join(appPath, ".agents", "skills");
+
+  // Project-scoped containment: the resolved skills root must stay inside the
+  // app directory. `lstat` alone is not enough — symlinks in intermediate
+  // components (e.g. `.agents` itself) are followed by the kernel — so verify
+  // the fully resolved path against the resolved app path.
+  let realAppPath: string;
+  try {
+    realAppPath = await fs.promises.realpath(appPath);
+  } catch {
+    return [];
+  }
+  let realSkillsRoot: string;
+  try {
+    realSkillsRoot = await fs.promises.realpath(skillsRoot);
+  } catch {
+    return [];
+  }
+  if (!realSkillsRoot.startsWith(realAppPath + path.sep)) {
+    logger.warn(
+      `Skill scan rejected ${skillsRoot}: resolves outside the app directory.`,
+    );
+    return [];
+  }
 
   let rootStat: fs.Stats;
   try {
@@ -196,6 +254,20 @@ export async function discoverProjectSkills(
 }
 
 async function loadSkill(skillMdPath: string): Promise<SkillInfo | null> {
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(skillMdPath);
+  } catch (error) {
+    logger.warn(`Failed to stat skill ${skillMdPath}: ${error}`);
+    return null;
+  }
+  if (stat.size > MAX_SKILL_FILE_BYTES) {
+    logger.warn(
+      `Skipping skill ${skillMdPath}: file is ${stat.size} bytes, exceeding ${MAX_SKILL_FILE_BYTES}.`,
+    );
+    return null;
+  }
+
   let content: string;
   try {
     content = await fs.promises.readFile(skillMdPath, "utf8");
@@ -226,7 +298,7 @@ async function loadSkill(skillMdPath: string): Promise<SkillInfo | null> {
 
   return {
     name,
-    description,
+    description: truncateUtf8(description, MAX_SKILL_DESCRIPTION_BYTES),
     location: skillMdPath,
     directory: path.dirname(skillMdPath),
   };

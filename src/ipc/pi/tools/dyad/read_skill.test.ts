@@ -121,6 +121,98 @@ describe("readSkillTool", () => {
     expect(output).toContain("listing truncated at 200 entries");
   });
 
+  it("does not report truncation when the listing has exactly 200 entries", async () => {
+    writeSkill("pdf-processing", SKILL);
+    const resourceDir = path.join(
+      tempRoot,
+      ".agents",
+      "skills",
+      "pdf-processing",
+      "assets",
+    );
+    fs.mkdirSync(resourceDir, { recursive: true });
+    // SKILL.md itself is one entry, so 199 asset files make exactly 200.
+    for (let index = 0; index < 199; index++) {
+      fs.writeFileSync(path.join(resourceDir, `file-${index}.txt`), "x");
+    }
+
+    const output = await readSkillTool.execute(
+      { skill: "pdf-processing" },
+      makeAgentContext({ appPath: tempRoot }),
+    );
+    expect(output).not.toContain("listing truncated");
+    expect(output).toContain("<file>assets/file-198.txt</file>");
+  });
+
+  it("does not resurrect an empty body into the frontmatter", async () => {
+    writeSkill(
+      "pdf-processing",
+      "---\nname: pdf-processing\ndescription: A skill\n---\n",
+    );
+    const output = await readSkillTool.execute(
+      { skill: "pdf-processing" },
+      makeAgentContext({ appPath: tempRoot }),
+    );
+    expect(output).toContain('<skill_content name="pdf-processing">');
+    expect(output).not.toContain("name: pdf-processing");
+    expect(output).not.toContain("description: A skill");
+  });
+
+  it("truncates an oversized skill body", async () => {
+    writeSkill(
+      "pdf-processing",
+      `---
+name: pdf-processing
+description: A skill
+---
+
+${"A".repeat(70 * 1024)}`,
+    );
+    const output = await readSkillTool.execute(
+      { skill: "pdf-processing" },
+      makeAgentContext({ appPath: tempRoot }),
+    );
+    expect(output).toContain("skill body truncated at 65536 bytes");
+    const body = output.split("<skill_content")[1] ?? "";
+    expect(body.length).toBeLessThan(70 * 1024);
+  });
+
+  it("rejects a skills root that resolves outside the app via symlink", async () => {
+    const externalDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "dyad-skill-ext-"),
+    );
+    try {
+      fs.mkdirSync(path.join(externalDir, "skills", "pdf-processing"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(externalDir, "skills", "pdf-processing", "SKILL.md"),
+        `---
+name: pdf-processing
+description: External skill
+---
+
+Body from outside.
+`,
+      );
+      const agentsDir = path.join(tempRoot, ".agents");
+      fs.mkdirSync(agentsDir, { recursive: true });
+      fs.symlinkSync(
+        path.join(externalDir, "skills"),
+        path.join(agentsDir, "skills"),
+      );
+
+      await expect(
+        readSkillTool.execute(
+          { skill: "pdf-processing" },
+          makeAgentContext({ appPath: tempRoot }),
+        ),
+      ).rejects.toMatchObject({ kind: DyadErrorKind.NotFound });
+    } finally {
+      await fs.promises.rm(externalDir, { recursive: true, force: true });
+    }
+  });
+
   it("skips node_modules in the resource listing", async () => {
     writeSkill("pdf-processing", SKILL);
     const nm = path.join(
