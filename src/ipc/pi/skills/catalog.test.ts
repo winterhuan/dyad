@@ -54,4 +54,27 @@ describe("buildSkillsCatalogBlock", () => {
     ])!;
     expect(block.indexOf("zebra")).toBeLessThan(block.indexOf("alpha"));
   });
+
+  it("caps the catalog at MAX_CATALOG_SKILLS and notes omitted skills", () => {
+    const skills = Array.from({ length: 150 }, (_, index) =>
+      skill({ name: `skill-${index}` }),
+    );
+    const block = buildSkillsCatalogBlock(skills)!;
+
+    expect(block).toContain("<name>skill-0</name>");
+    expect(block).toContain("<name>skill-99</name>");
+    expect(block).not.toContain("<name>skill-100</name>");
+    expect(block).toContain(
+      "<!-- 50 more skills available but omitted from the catalog -->",
+    );
+  });
+
+  it("omits the truncation comment when at or under the cap", () => {
+    const block = buildSkillsCatalogBlock(
+      Array.from({ length: 100 }, (_, index) =>
+        skill({ name: `skill-${index}` }),
+      ),
+    )!;
+    expect(block).not.toContain("more skills available but omitted");
+  });
 });

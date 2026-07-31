@@ -16,6 +16,15 @@ before proceeding. Relative paths in a skill resolve against the skill
 directory.`;
 
 /**
+ * Cap on skills listed in the injected catalog. Discovery itself stays
+ * bounded by `MAX_SKILL_DIRECTORIES` (scan cost); this separate cap protects
+ * the system prompt from ballooning when an app ships hundreds of skills
+ * (~100 tokens per entry). Skills beyond the cap stay discoverable and
+ * loadable via `read_skill`, but the model cannot know their names.
+ */
+export const MAX_CATALOG_SKILLS = 100;
+
+/**
  * Build the disclosure section, or null when no skills are available (callers
  * omit the section entirely instead of showing an empty catalog).
  */
@@ -26,7 +35,10 @@ export function buildSkillsCatalogBlock(
     return null;
   }
 
-  const catalog = skills
+  const shown = skills.slice(0, MAX_CATALOG_SKILLS);
+  const omitted = skills.length - shown.length;
+
+  const catalog = shown
     .map(
       (skill) =>
         `    <skill>\n` +
@@ -36,9 +48,13 @@ export function buildSkillsCatalogBlock(
         `    </skill>`,
     )
     .join("\n");
+  const truncation =
+    omitted > 0
+      ? `\n    <!-- ${omitted} more skills available but omitted from the catalog -->`
+      : "";
 
   return (
     `${SKILLS_INSTRUCTIONS_BLOCK}\n\n` +
-    `<available_skills>\n${catalog}\n</available_skills>`
+    `<available_skills>\n${catalog}${truncation}\n</available_skills>`
   );
 }

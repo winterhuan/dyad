@@ -190,11 +190,31 @@ describe("discoverProjectSkills", () => {
     expect(skills[0]?.description).toBe("First");
   });
 
-  it("respects the directory count cap", async () => {
+  it("discovers skills across many directories without the cap interfering", async () => {
     for (let index = 0; index < 12; index++) {
       writeSkill(`skill-${index}`, skillContent(`skill-${index}`));
     }
     const skills = await discoverProjectSkills(tempRoot);
     expect(skills).toHaveLength(12);
+  });
+
+  it("truncates the scan when the directory count cap is exceeded", async () => {
+    const skillsRoot = path.join(tempRoot, ".agents", "skills");
+    fs.mkdirSync(skillsRoot, { recursive: true });
+    for (let index = 0; index < 2001; index++) {
+      const dir = path.join(skillsRoot, `cap-dir-${index}`);
+      fs.mkdirSync(dir);
+      fs.writeFileSync(
+        path.join(dir, "SKILL.md"),
+        skillContent(`cap-skill-${index}`),
+      );
+    }
+
+    const skills = await discoverProjectSkills(tempRoot);
+
+    // The cap stops the scan at 2000 visited directories (including the
+    // skills root), so not all 2001 skills can be discovered.
+    expect(skills.length).toBeLessThan(2001);
+    expect(skills.length).toBeGreaterThan(1500);
   });
 });

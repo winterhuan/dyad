@@ -30,8 +30,10 @@ the existing built-in `read_guide` mechanism, and are gated by a new
   time and avoids mtime-cache invalidation bugs (adding a new skill directory
   does not change the mtime of existing `SKILL.md` files). No content-level
   cache; the discovery module is a pure function of `<appPath>`.
-- When no skills are discovered, inject no catalog section and register no
-  `read_skill` tool.
+- When no skills are discovered, inject no catalog section. The `read_skill`
+  tool stays registered (gated only by the `enableProjectSkills` setting): a
+  constant tool set keeps the model's tool-use behavior stable, and a
+  spurious call against an empty catalog just fails with `NotFound`.
 
 ## Public tool interface
 
@@ -39,7 +41,7 @@ the existing built-in `read_guide` mechanism, and are gated by a new
 
 ```ts
 read_skill({
-  skill: string; // enum constrained to discovered skill names
+  skill: string; // a discovered skill name; validated at execution time
 })
 ```
 
@@ -66,9 +68,10 @@ read_skill({
 - Set `modifiesState: false`, `defaultConsent: "always"` (matching
   `read_guide`), `getConsentPreview` returning `Read skill: <name>`, and
   `buildXml` emitting `<dyad-read-skill name="..."></dyad-read-skill>`.
-- Constrain the `skill` parameter to an enum of discovered names so the model
-  cannot hallucinate skill names; unknown names throw
-  `DyadError(NotFound)`.
+- Accept any string for `skill` and throw `DyadError(NotFound)` for names that
+  are not among the currently discovered skills (an enum is not viable: the
+  schema is static while the discovery result is disk state; execution-time
+  validation also tolerates skills added after prompt assembly).
 - The tool is available in agent, ask, and plan modes (same gating as
   `read_guide`).
 
@@ -95,6 +98,12 @@ read_skill({
 
 - Escape all injected metadata (`escapeXmlAttr`) since skill files are
   user-controlled. Omit the section entirely when the catalog is empty.
+- Cap the injected catalog at `MAX_CATALOG_SKILLS` (100) entries with an
+  omitted-count comment: discovery's directory cap bounds scan cost, but the
+  catalog cap separately protects prompt size (~100 tokens/skill), and a few
+  hundred skills would otherwise balloon the system prompt. Skills beyond the
+  cap remain loadable via `read_skill` (though the model cannot know their
+  names).
 - Do NOT inject the catalog in the security-review branch
   (`isSecurityReviewIntent` in `chat_stream_handlers.ts`), which bypasses
   `constructSystemPrompt` and must keep a minimal, project-content-free
@@ -118,11 +127,12 @@ read_skill({
 
 ### New module: `src/ipc/pi/skills/`
 
-- `discovery.ts` — directory scan, frontmatter parse, validation. Pure and
-  unit-testable: `discoverProjectSkills(appPath) -> SkillInfo[]`, no cache
-  (scan cost is negligible for one bounded project directory).
-- `catalog.ts` — types (`SkillInfo { name, description, location, directory }`),
-  catalog-to-XML serializer with escaping, build instructions block.
+- `discovery.ts` — directory scan, frontmatter parse, validation, and the
+  `SkillInfo` type. Pure and unit-testable:
+  `discoverProjectSkills(appPath) -> SkillInfo[]`, no cache (scan cost is
+  negligible for one bounded project directory).
+- `catalog.ts` — catalog-to-XML serializer with escaping, build instructions
+  block, `MAX_CATALOG_SKILLS` truncation.
 - `read_skill.ts` — `ToolDefinition` implementation (mirrors `read_guide.ts`
   structure); `execute` resolves the skill by calling `discoverProjectSkills(ctx.appPath)`
   itself, so the tool and the injected catalog always agree.
@@ -130,8 +140,11 @@ read_skill({
 ### Wiring
 
 - Register `read_skill` in `TOOL_DEFINITIONS` (`tool_registry.ts`), adjacent
-  to `readGuideTool`. No changes to `RunTurnInput`, `execute_chat_turn.ts`,
-  or `AgentContext`: the tool discovers via `ctx.appPath` at invocation time.
+  to `readGuideTool`. The tool discovers via `ctx.appPath` at invocation time.
+  Add `enableProjectSkills?: boolean` to `AgentContext` (types.ts) and thread
+  `input.settings.enableProjectSkills !== false` into the turn context in
+  `execute_chat_turn.ts` so `isEnabled` can gate the tool by the setting.
+  No changes to `RunTurnInput`.
 - `chat_stream_handlers.ts` appends the catalog (from
   `discoverProjectSkills(appPath)`) to `piSystemPrompt` after
   `constructSystemPrompt` (supabase/neon append site), except in the
@@ -154,10 +167,13 @@ read_skill({
 
 - Discovery unit tests: valid/invalid frontmatter (missing description,
   unparseable YAML, colons in values), lenient name validation, recursion and
-  skip rules (`node_modules`, depth/dir caps), collisions (first wins +
-  warning), empty catalog, missing `.agents/skills` directory.
+  skip rules (`node_modules`, depth cap), collision (first wins + warning),
+  empty catalog, missing `.agents/skills` directory, and a scan that actually
+  exceeds the 2000-directory cap (asserts truncation kicks in, not just that a
+  small tree scans).
 - Serializer tests: XML escaping of user-controlled names/descriptions, empty
-  section omission.
+  section omission, `MAX_CATALOG_SKILLS` truncation with the omitted-count
+  comment (and its absence at/below the cap).
 - `read_skill` tool tests: body returned without frontmatter, resources
   listing, truncation cap, unknown name `NotFound`, skill deleted between
   discovery and invocation `NotFound`, consent defaults.
@@ -165,13 +181,10 @@ read_skill({
   `enableProjectSkills` is off. Update exact agent/ask/plan tool-set
   expectations and affected request snapshots (new tool changes the declared
   tool list).
-- System-prompt tests (`system_prompt.test.ts` style): catalog block appears
-  when skills exist, is omitted when none, metadata escaped, absent in the
-  security-review branch.
-- Integration test through the renderer+IPC harness (fake provider): a temp
-  app directory with a fixture `.agents/skills/<name>/SKILL.md` yields a
-  catalog in the system prompt and a successful `read_skill` call in the
-  transcript.
+- System-prompt coverage through the renderer+IPC harness (fake provider,
+  `chat_stream_handlers.pi.test.ts`): catalog block appears in the provider
+  context when skills exist, is omitted when `enableProjectSkills` is off, and
+  a `read_skill` call executes end-to-end into the persisted transcript.
 - Run focused Vitest suites, then `npm run fmt`, `npm run lint`, `npm run ts`.
 
 ## Assumptions
@@ -184,8 +197,16 @@ read_skill({
   are an additive user-extensible layer.
 - Skill instructions can instruct the model to run arbitrary commands; the
   existing per-tool consent gate (`bash` etc.) still applies to every tool the
-  model invokes while following a skill. Skill names/descriptions are
-  user-controlled text injected into the system prompt: XML-escaped, but
-  accepted as a prompt-injection surface in v1 (same posture as Pi).
+  model invokes while following a skill. Note that `write_file` is
+  `defaultConsent: "always"`, so a malicious skill (e.g. one cloned in via a
+  repo's `.agents/skills/`) can direct unapproved file edits without a
+  consent prompt — this is the same posture Pi accepts for guide content, but
+  a later pass should surface the discovered skill count in the UI. Skill
+  names/descriptions are user-controlled text injected into the system prompt:
+  XML-escaped and catalog-capped, but accepted as a prompt-injection surface
+  in v1 (same posture as Pi).
+- The security-review branch keeps the catalog out of the prompt; the
+  `read_skill` tool remains available there (low risk: the model would have to
+  guess a skill name, and the tool is read-only).
 - Frontmatter parsing stays hand-rolled and lenient; no `yaml` dependency is
   added.
