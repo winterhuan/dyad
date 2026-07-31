@@ -4,11 +4,50 @@ import { selectedComponentsPreviewAtom } from "@/atoms/previewAtoms";
 import {
   PREVIEW_IFRAME_MESSAGE_ROUTES,
   createPreviewIframeCommandAdapter,
+  isTextEditingMessageForSelectedComponent,
   routePreviewIframeMessage,
 } from "./commands";
 import type { PreviewIframeEvent } from "./state";
 
 describe("preview iframe command adapter", () => {
+  it("accepts text events only for the currently selected component runtime", () => {
+    const selectedComponent = {
+      id: "src/App.tsx:7:2",
+      runtimeId: "runtime-1",
+    };
+
+    expect(
+      isTextEditingMessageForSelectedComponent(
+        {
+          componentId: selectedComponent.id,
+          runtimeId: selectedComponent.runtimeId,
+        },
+        selectedComponent,
+      ),
+    ).toBe(true);
+    expect(
+      isTextEditingMessageForSelectedComponent(
+        { componentId: selectedComponent.id },
+        selectedComponent,
+      ),
+    ).toBe(true);
+    expect(
+      isTextEditingMessageForSelectedComponent(
+        { componentId: selectedComponent.id, runtimeId: "stale-runtime" },
+        selectedComponent,
+      ),
+    ).toBe(false);
+    expect(
+      isTextEditingMessageForSelectedComponent(
+        {
+          componentId: selectedComponent.id,
+          runtimeId: selectedComponent.runtimeId,
+        },
+        null,
+      ),
+    ).toBe(false);
+  });
+
   it("routes machine messages and leaves component routes claimable", () => {
     const contentWindow = { postMessage: vi.fn() };
     const send = vi.fn<(event: PreviewIframeEvent) => void>();
@@ -18,6 +57,7 @@ describe("preview iframe command adapter", () => {
     routePreviewIframeMessage({
       event: {
         source: contentWindow,
+        origin: "http://localhost:3000",
         data: { type: "pushState", payload: { newUrl: "/settings" } },
       } as unknown as MessageEvent,
       contentWindow,
@@ -35,6 +75,7 @@ describe("preview iframe command adapter", () => {
 
     const selectorMessage = {
       source: contentWindow,
+      origin: "http://localhost:3000",
       data: { type: "dyad-component-selector-initialized" },
     } as unknown as MessageEvent;
     routePreviewIframeMessage({
@@ -59,6 +100,7 @@ describe("preview iframe command adapter", () => {
 
     const responseMessage = {
       source: contentWindow,
+      origin: "http://localhost:3000",
       data: {
         type: "dyad-screenshot-response",
         requestId: "capture:1",
@@ -93,6 +135,7 @@ describe("preview iframe command adapter", () => {
       routePreviewIframeMessage({
         event: {
           source: contentWindow,
+          origin: "http://localhost:3000",
           data: { type: "replaceState", payload: { newUrl } },
         } as unknown as MessageEvent,
         contentWindow,
@@ -104,6 +147,39 @@ describe("preview iframe command adapter", () => {
     }
 
     expect(send).not.toHaveBeenCalled();
+    expect(onComponentMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects messages from a different source or origin", () => {
+    const contentWindow = { postMessage: vi.fn() };
+    const send = vi.fn<(event: PreviewIframeEvent) => void>();
+    const onSharedMachineEvent = vi.fn();
+    const onComponentMessage = vi.fn();
+
+    for (const event of [
+      {
+        source: { postMessage: vi.fn() },
+        origin: "http://localhost:3000",
+        data: { type: "dyad-component-selector-initialized" },
+      },
+      {
+        source: contentWindow,
+        origin: "https://untrusted.example",
+        data: { type: "dyad-component-selector-initialized" },
+      },
+    ]) {
+      routePreviewIframeMessage({
+        event: event as unknown as MessageEvent,
+        contentWindow,
+        appUrl: "http://localhost:3000",
+        send,
+        onSharedMachineEvent,
+        onComponentMessage,
+      });
+    }
+
+    expect(send).not.toHaveBeenCalled();
+    expect(onSharedMachineEvent).not.toHaveBeenCalled();
     expect(onComponentMessage).not.toHaveBeenCalled();
   });
 

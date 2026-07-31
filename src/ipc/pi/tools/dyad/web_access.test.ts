@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { DyadErrorKind } from "@/errors/dyad_error";
 import {
   assertPublicHttpUrl,
   searchWeb,
@@ -66,6 +67,33 @@ describe("web access", () => {
       ),
     ).rejects.toThrow("API key");
   });
+
+  it.each([
+    [401, DyadErrorKind.Auth],
+    [403, DyadErrorKind.Auth],
+    [429, DyadErrorKind.RateLimited],
+    [500, DyadErrorKind.External],
+  ])(
+    "classifies provider status %i without exposing its body",
+    async (status, kind) => {
+      const secretBody = "upstream-secret-response";
+      const request = searchWeb(
+        { query: "latest docs" },
+        { provider: "exa", exaApiKey: "exa-key" },
+        {
+          fetchFn: vi.fn<typeof fetch>(async () =>
+            Promise.resolve(new Response(secretBody, { status })),
+          ),
+        },
+      );
+
+      await expect(request).rejects.toMatchObject({
+        kind,
+        message: `Exa search failed (${status})`,
+      });
+      await expect(request).rejects.not.toThrow(secretBody);
+    },
+  );
 
   it("only enables search for the configured provider", () => {
     const isEnabled = webSearchTool.isEnabled!;

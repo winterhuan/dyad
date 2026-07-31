@@ -96,6 +96,22 @@ export type ApplyVisualEditingChangesParams = z.infer<
   typeof ApplyVisualEditingChangesParamsSchema
 >;
 
+export const ApplyVisualEditingChangesResultSchema = z.object({
+  modifiedFiles: z.array(z.string()),
+  commitHash: z.string().nullable(),
+  appliedCount: z.number().int().nonnegative(),
+  skipped: z.array(
+    z.object({
+      componentId: z.string(),
+      reason: z.string(),
+    }),
+  ),
+});
+
+export type ApplyVisualEditingChangesResult = z.infer<
+  typeof ApplyVisualEditingChangesResultSchema
+>;
+
 export const AnalyseComponentParamsSchema = z.object({
   appId: z.number(),
   componentId: z.string(),
@@ -149,7 +165,7 @@ export const visualEditingContracts = {
   applyChanges: defineContract({
     channel: "apply-visual-editing-changes",
     input: ApplyVisualEditingChangesParamsSchema,
-    output: z.void(),
+    output: ApplyVisualEditingChangesResultSchema,
   }),
 
   analyzeComponent: defineContract({

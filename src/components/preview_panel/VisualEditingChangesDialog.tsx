@@ -1,8 +1,8 @@
-import { useAtom, useAtomValue } from "jotai";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   clearPendingVisualChangesForAppAtom,
   pendingVisualChangesAtom,
+  setPendingVisualChangesForAppAtom,
 } from "@/atoms/previewAtoms";
 import { Button } from "@/components/ui/button";
 import { ipc } from "@/ipc/types";
@@ -20,11 +20,12 @@ interface VisualEditingChangesDialogProps {
 export function VisualEditingChangesDialog({
   onReset,
 }: VisualEditingChangesDialogProps) {
-  const [pendingChanges, setPendingChanges] = useAtom(pendingVisualChangesAtom);
+  const pendingChanges = useAtomValue(pendingVisualChangesAtom);
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const clearPendingChangesForApp = useSetAtom(
     clearPendingVisualChangesForAppAtom,
   );
+  const setPendingChangesForApp = useSetAtom(setPendingVisualChangesForAppAtom);
   const [isSaving, setIsSaving] = useState(false);
   const selectedAppIdRef = useRef(selectedAppId);
   selectedAppIdRef.current = selectedAppId;
@@ -41,10 +42,42 @@ export function VisualEditingChangesDialog({
     const changesToSave = Array.from(pendingChanges.values());
     setIsSaving(true);
     try {
-      await applyChangesMutation.mutateAsync({ appId, changes: changesToSave });
-      clearPendingChangesForApp(appId);
-      showSuccess("Visual changes saved to source files");
-      if (selectedAppIdRef.current === appId) {
+      const result = await applyChangesMutation.mutateAsync({
+        appId,
+        changes: changesToSave,
+      });
+      const skippedIds = new Set(
+        result.skipped.map((change) => change.componentId),
+      );
+      let hasRemainingChanges = false;
+      setPendingChangesForApp({
+        appId,
+        changes: (current) => {
+          const reconciled = new Map(current);
+          for (const submittedChange of changesToSave) {
+            if (
+              !skippedIds.has(submittedChange.componentId) &&
+              reconciled.get(submittedChange.componentId) === submittedChange
+            ) {
+              reconciled.delete(submittedChange.componentId);
+            }
+          }
+          hasRemainingChanges = reconciled.size > 0;
+          return reconciled;
+        },
+      });
+
+      if (result.appliedCount > 0) {
+        const skippedSuffix =
+          result.skipped.length > 0 ? `; ${result.skipped.length} skipped` : "";
+        showSuccess(
+          `${result.appliedCount} visual ${result.appliedCount === 1 ? "change" : "changes"} saved${skippedSuffix}`,
+        );
+      } else if (result.skipped.length > 0) {
+        showError(`No visual changes saved: ${result.skipped[0].reason}`);
+      }
+
+      if (!hasRemainingChanges && selectedAppIdRef.current === appId) {
         onReset?.();
       }
     } catch (error) {
@@ -56,7 +89,9 @@ export function VisualEditingChangesDialog({
   };
 
   const handleDiscard = () => {
-    setPendingChanges(new Map());
+    if (selectedAppId !== null) {
+      clearPendingChangesForApp(selectedAppId);
+    }
     onReset?.();
   };
 

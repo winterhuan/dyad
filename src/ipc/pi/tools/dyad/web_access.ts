@@ -222,7 +222,7 @@ async function searchExa(
     }),
     signal: combineSignals(signal, FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw await responseError("Exa", response);
+  if (!response.ok) throw responseError("Exa", response);
   const data = (await response.json()) as {
     results?: Array<{
       title?: string;
@@ -259,7 +259,7 @@ async function searchBrave(
     headers: { Accept: "application/json", "X-Subscription-Token": apiKey },
     signal: combineSignals(signal, FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw await responseError("Brave", response);
+  if (!response.ok) throw responseError("Brave", response);
   const data = (await response.json()) as {
     web?: {
       results?: Array<{
@@ -320,15 +320,14 @@ export async function searchWeb(
   return { provider, text: truncate(sections.join("\n\n")) };
 }
 
-async function responseError(
-  provider: string,
-  response: Response,
-): Promise<Error> {
-  const body = (await response.text()).slice(0, 500);
-  return new DyadError(
-    `${provider} search failed (${response.status})${body ? `: ${body}` : ""}`,
-    DyadErrorKind.External,
-  );
+function responseError(provider: string, response: Response): Error {
+  const kind =
+    response.status === 401 || response.status === 403
+      ? DyadErrorKind.Auth
+      : response.status === 429
+        ? DyadErrorKind.RateLimited
+        : DyadErrorKind.External;
+  return new DyadError(`${provider} search failed (${response.status})`, kind);
 }
 
 function combineSignals(

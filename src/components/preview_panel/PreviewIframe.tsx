@@ -1,6 +1,6 @@
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { useCurrentAppUrl } from "@/hooks/useAppRun";
-import { useAtomValue, useSetAtom, useAtom } from "jotai";
+import { useAtomValue, useSetAtom, useAtom, useStore } from "jotai";
 import {
   useCallback,
   useEffect,
@@ -88,6 +88,7 @@ import {
 } from "./previewAddressPath";
 import { getPreviewToolbarActionVisibility } from "./previewToolbarLayout";
 import { usePreviewIframe } from "@/preview_iframe/usePreviewIframe";
+import { isTextEditingMessageForSelectedComponent } from "@/preview_iframe/commands";
 import {
   selectCanGoBack,
   selectCanGoForward,
@@ -201,6 +202,7 @@ const PREVIEW_TOOLBAR_BUTTON_CLASSES =
 // Preview iframe component
 export const PreviewIframe = ({ loading }: { loading: boolean }) => {
   const { t } = useTranslation("home");
+  const store = useStore();
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const { appUrl, originalUrl } = useCurrentAppUrl(selectedAppId);
   const appRunManager = useAppRunRemoteManager();
@@ -385,9 +387,20 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
     }
   };
 
-  const handleTextUpdated = async (data: any) => {
-    const { componentId, text } = data;
-    if (!componentId || !selectedAppId) return;
+  const handleTextUpdated = (data: any) => {
+    const { componentId, runtimeId, text } = data;
+    const selectedComponent = store.get(visualEditingSelectedComponentAtom);
+    if (
+      typeof componentId !== "string" ||
+      typeof text !== "string" ||
+      selectedAppId === null ||
+      !isTextEditingMessageForSelectedComponent(
+        { componentId, runtimeId },
+        selectedComponent,
+      )
+    ) {
+      return;
+    }
 
     // Parse componentId to extract file path and line number
     const [filePath, lineStr] = componentId.split(":");
@@ -408,9 +421,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         mergePendingChange(existing, {
           componentId,
           componentName:
-            existing?.componentName ||
-            visualEditingSelectedComponent?.name ||
-            "",
+            existing?.componentName || selectedComponent?.name || "",
           relativePath: filePath,
           lineNumber,
           textContent: text,
@@ -442,12 +453,11 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
       console.error("Failed to get element styles:", error);
     }
   };
-  // Reset visual editing state when app changes or component unmounts
+  // Reset the selected component when the app changes or component unmounts.
+  // Pending edits are app-scoped and survive navigation until saved or discarded.
   useEffect(() => {
     return () => {
-      // Cleanup on unmount or when app changes
       setVisualEditingSelectedComponent(null);
-      setPendingChanges(new Map());
       setCurrentComponentCoordinates(null);
     };
   }, [selectedAppId]);

@@ -36,6 +36,7 @@ export const queryKeys = {
     all: ["settings"] as const,
     user: ["settings", "user"] as const,
     envVars: ["settings", "envVars"] as const,
+    webSearchCredentials: ["settings", "webSearchCredentials"] as const,
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

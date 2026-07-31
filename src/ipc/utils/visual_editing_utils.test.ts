@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { transformContent, analyzeComponent } from "./visual_editing_utils";
+import {
+  transformContent,
+  transformContentWithResult,
+  analyzeComponent,
+} from "./visual_editing_utils";
 
 describe("transformContent", () => {
   describe("className manipulation", () => {
@@ -459,6 +463,99 @@ function Component() {
       expect(result).toContain("text-[24px]");
       // Recast should preserve overall structure
       expect(result).toMatch(/return\s*\(/);
+    });
+  });
+});
+
+describe("transformContentWithResult", () => {
+  it("reports a missing component location", () => {
+    const content = `
+function Component() {
+  return <div>Hello</div>;
+}`;
+    const result = transformContentWithResult(
+      content,
+      new Map([[99, { classes: ["p-2"], prefixes: ["p-"] }]]),
+    );
+
+    expect(result.content).toBe(content);
+    expect(result.locations.get(99)).toEqual({
+      applied: false,
+      reason: "Component location was not found in the source file.",
+    });
+  });
+
+  it("does not overwrite a dynamic className", () => {
+    const content = `
+function Component() {
+  return <div className={dynamicClass}>Hello</div>;
+}`;
+    const result = transformContentWithResult(
+      content,
+      new Map([[3, { classes: ["p-2"], prefixes: ["p-"] }]]),
+    );
+
+    expect(result.content).toBe(content);
+    expect(result.locations.get(3)).toEqual({
+      applied: false,
+      reason: "Dynamic class names cannot be edited visually.",
+    });
+  });
+
+  it("returns the original content when requested classes already match", () => {
+    const content = `function Component() {
+  return <div className="ml-2 flex">Hello</div>;
+}`;
+    const result = transformContentWithResult(
+      content,
+      new Map([[2, { classes: ["ml-2"], prefixes: ["ml-"] }]]),
+    );
+
+    expect(result.content).toBe(content);
+    expect(result.locations.get(2)).toEqual({
+      applied: false,
+      reason: "The requested visual changes already match the source.",
+    });
+  });
+
+  it("returns the original content when requested text already matches", () => {
+    const content = `function Component() {
+  return <div>Hello</div>;
+}`;
+    const result = transformContentWithResult(
+      content,
+      new Map([[2, { classes: [], prefixes: [], textContent: "Hello" }]]),
+    );
+
+    expect(result.content).toBe(content);
+    expect(result.locations.get(2)).toEqual({
+      applied: false,
+      reason: "The requested visual changes already match the source.",
+    });
+  });
+
+  it("returns the original content when requested image source already matches", () => {
+    const content = `function Component() {
+  return <img src="/images/photo.png" />;
+}`;
+    const result = transformContentWithResult(
+      content,
+      new Map([
+        [
+          2,
+          {
+            classes: [],
+            prefixes: [],
+            imageSrc: "/images/photo.png",
+          },
+        ],
+      ]),
+    );
+
+    expect(result.content).toBe(content);
+    expect(result.locations.get(2)).toEqual({
+      applied: false,
+      reason: "The requested visual changes already match the source.",
     });
   });
 });

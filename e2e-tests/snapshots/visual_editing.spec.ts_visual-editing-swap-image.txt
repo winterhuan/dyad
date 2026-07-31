@@ -1,6 +1,4 @@
 === src/pages/Index.tsx ===
-import { MadeWithDyad } from "@/components/made-with-dyad";
-
 const Index = () => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -13,7 +11,6 @@ const Index = () => {
                 <p className="text-xl text-gray-600">Start building your amazing project here!
                             </p>
             </div>
-            <MadeWithDyad />
         </div>
     );
 };

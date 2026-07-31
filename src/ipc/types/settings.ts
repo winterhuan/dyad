@@ -7,6 +7,13 @@ export const ProviderApiKeyValidationProviderSchema = z.enum([
   "openrouter",
 ]);
 
+export const WebSearchCredentialProviderSchema = z.enum(["exa", "brave"]);
+
+export const WebSearchCredentialStatusSchema = z.object({
+  hasExaKey: z.boolean(),
+  hasBraveKey: z.boolean(),
+});
+
 // =============================================================================
 // Settings Contracts
 // =============================================================================
@@ -45,6 +52,33 @@ export const settingsContracts = {
       provider: ProviderApiKeyValidationProviderSchema,
       apiKey: z.string(),
     }),
+    output: z.object({ ok: z.literal(true) }),
+  }),
+
+  getWebSearchCredentialStatus: defineContract({
+    channel: "get-web-search-credential-status",
+    input: z.void(),
+    output: WebSearchCredentialStatusSchema,
+  }),
+
+  setWebSearchApiKey: defineContract({
+    channel: "set-web-search-api-key",
+    input: z.object({
+      provider: WebSearchCredentialProviderSchema,
+      apiKey: z.string().min(1).max(8_192),
+    }),
+    output: WebSearchCredentialStatusSchema,
+  }),
+
+  deleteWebSearchApiKey: defineContract({
+    channel: "delete-web-search-api-key",
+    input: z.object({ provider: WebSearchCredentialProviderSchema }),
+    output: WebSearchCredentialStatusSchema,
+  }),
+
+  testWebSearchProvider: defineContract({
+    channel: "test-web-search-provider",
+    input: z.object({ provider: WebSearchCredentialProviderSchema }),
     output: z.object({ ok: z.literal(true) }),
   }),
 } as const;
@@ -100,4 +134,12 @@ export type ValidateProviderApiKeyInput = z.infer<
 /** Output type for validateProviderApiKey */
 export type ValidateProviderApiKeyOutput = z.infer<
   (typeof settingsContracts)["validateProviderApiKey"]["output"]
+>;
+
+export type WebSearchCredentialProvider = z.infer<
+  typeof WebSearchCredentialProviderSchema
+>;
+
+export type WebSearchCredentialStatus = z.infer<
+  typeof WebSearchCredentialStatusSchema
 >;

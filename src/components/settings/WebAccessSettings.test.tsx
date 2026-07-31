@@ -1,10 +1,7 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  WEB_SEARCH_BRAVE_PROVIDER_ID,
-  WEB_SEARCH_EXA_PROVIDER_ID,
-} from "@/lib/schemas";
 import { WebAccessSettings } from "./WebAccessSettings";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +11,10 @@ const mocks = vi.hoisted(() => ({
     providerSettings: {},
   } as any,
   updateSettings: vi.fn(),
+  getCredentialStatus: vi.fn(),
+  setApiKey: vi.fn(),
+  deleteApiKey: vi.fn(),
+  testProvider: vi.fn(),
 }));
 
 vi.mock("@/hooks/useSettings", () => ({
@@ -23,24 +24,59 @@ vi.mock("@/hooks/useSettings", () => ({
   }),
 }));
 
+vi.mock("@/ipc/types", () => ({
+  ipc: {
+    settings: {
+      getWebSearchCredentialStatus: mocks.getCredentialStatus,
+      setWebSearchApiKey: mocks.setApiKey,
+      deleteWebSearchApiKey: mocks.deleteApiKey,
+      testWebSearchProvider: mocks.testProvider,
+    },
+  },
+}));
+
 vi.mock("@/lib/toast", () => ({
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }));
 
+function renderSettings() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <WebAccessSettings />
+    </QueryClientProvider>,
+  );
+}
+
 describe("WebAccessSettings", () => {
   beforeEach(() => {
-    mocks.updateSettings.mockReset();
-    mocks.updateSettings.mockResolvedValue(undefined);
+    vi.clearAllMocks();
     mocks.settings = {
       enableWebAccess: false,
       webSearchProvider: "auto",
       providerSettings: {},
     };
+    mocks.updateSettings.mockResolvedValue(mocks.settings);
+    mocks.getCredentialStatus.mockResolvedValue({
+      hasExaKey: false,
+      hasBraveKey: false,
+    });
+    mocks.setApiKey.mockResolvedValue({
+      hasExaKey: true,
+      hasBraveKey: false,
+    });
+    mocks.deleteApiKey.mockResolvedValue({
+      hasExaKey: false,
+      hasBraveKey: false,
+    });
+    mocks.testProvider.mockResolvedValue({ ok: true });
   });
 
   it("updates the web access toggle", () => {
-    render(<WebAccessSettings />);
+    renderSettings();
 
     fireEvent.click(screen.getByRole("switch", { name: "Web access" }));
 
@@ -49,99 +85,56 @@ describe("WebAccessSettings", () => {
     });
   });
 
-  it("stores search keys in reserved encrypted-provider settings", async () => {
-    mocks.settings = {
-      enableWebAccess: true,
-      webSearchProvider: "auto",
-      providerSettings: {
-        [WEB_SEARCH_BRAVE_PROVIDER_ID]: { apiKey: { value: "brave-key" } },
-      },
-    };
-    render(<WebAccessSettings />);
+  it("stores search keys through the dedicated credential IPC", async () => {
+    mocks.settings.enableWebAccess = true;
+    renderSettings();
 
     fireEvent.change(screen.getByLabelText("Exa API key value"), {
       target: { value: "exa-key" },
     });
-    fireEvent.click(screen.getAllByRole("button", { name: /Save/ })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0]);
 
     await waitFor(() => {
-      expect(mocks.updateSettings).toHaveBeenCalledWith({
-        providerSettings: {
-          [WEB_SEARCH_BRAVE_PROVIDER_ID]: { apiKey: { value: "brave-key" } },
-          [WEB_SEARCH_EXA_PROVIDER_ID]: { apiKey: { value: "exa-key" } },
-        },
+      expect(mocks.setApiKey).toHaveBeenCalledWith({
+        provider: "exa",
+        apiKey: "exa-key",
       });
+    });
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("deletes a configured key through the dedicated credential IPC", async () => {
+    mocks.settings.enableWebAccess = true;
+    mocks.getCredentialStatus.mockResolvedValue({
+      hasExaKey: true,
+      hasBraveKey: false,
+    });
+    renderSettings();
+
+    const deleteButton = await screen.findByRole("button", { name: "Delete" });
+    fireEvent.click(deleteButton);
+
+    await waitFor(() => {
+      expect(mocks.deleteApiKey).toHaveBeenCalledWith({ provider: "exa" });
     });
   });
 
-  it("explicitly clears a deleted key", async () => {
-    mocks.settings = {
-      enableWebAccess: true,
-      webSearchProvider: "exa",
-      providerSettings: {
-        [WEB_SEARCH_EXA_PROVIDER_ID]: { apiKey: { value: "saved-exa-key" } },
-      },
+  it("tests only a stored key without exposing its value", async () => {
+    mocks.settings.enableWebAccess = true;
+    mocks.settings.providerSettings = {
+      "dyad-web-exa": { apiKey: { value: "must-not-render" } },
     };
-    render(<WebAccessSettings />);
+    mocks.getCredentialStatus.mockResolvedValue({
+      hasExaKey: true,
+      hasBraveKey: false,
+    });
+    renderSettings();
 
-    fireEvent.click(screen.getByRole("button", { name: /Delete/ }));
+    expect(screen.queryByText("must-not-render")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Test" }));
 
     await waitFor(() => {
-      expect(mocks.updateSettings).toHaveBeenCalledWith({
-        providerSettings: {
-          [WEB_SEARCH_EXA_PROVIDER_ID]: { apiKey: undefined },
-        },
-      });
-    });
-  });
-
-  it("serializes concurrent key saves against the latest settings", async () => {
-    mocks.settings = {
-      enableWebAccess: true,
-      webSearchProvider: "auto",
-      providerSettings: {},
-    };
-    let resolveFirst: ((value: typeof mocks.settings) => void) | undefined;
-    mocks.updateSettings
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveFirst = resolve;
-          }),
-      )
-      .mockImplementationOnce(async (update) => ({
-        ...mocks.settings,
-        ...update,
-      }));
-    render(<WebAccessSettings />);
-
-    fireEvent.change(screen.getByLabelText("Exa API key value"), {
-      target: { value: "exa-key" },
-    });
-    fireEvent.change(screen.getByLabelText("Brave Search API key value"), {
-      target: { value: "brave-key" },
-    });
-    const saveButtons = screen.getAllByRole("button", { name: "Save" });
-    fireEvent.click(saveButtons[0]);
-    fireEvent.click(saveButtons[1]);
-
-    await waitFor(() => expect(mocks.updateSettings).toHaveBeenCalledTimes(1));
-    resolveFirst?.({
-      ...mocks.settings,
-      providerSettings: {
-        [WEB_SEARCH_EXA_PROVIDER_ID]: { apiKey: { value: "exa-key" } },
-      },
-    });
-
-    await waitFor(() => {
-      expect(mocks.updateSettings).toHaveBeenLastCalledWith({
-        providerSettings: {
-          [WEB_SEARCH_EXA_PROVIDER_ID]: { apiKey: { value: "exa-key" } },
-          [WEB_SEARCH_BRAVE_PROVIDER_ID]: {
-            apiKey: { value: "brave-key" },
-          },
-        },
-      });
+      expect(mocks.testProvider).toHaveBeenCalledWith({ provider: "exa" });
     });
   });
 });

@@ -36,7 +36,6 @@ import { QuestionnaireInput } from "./QuestionnaireInput";
 import { QueuedMessagesList } from "./QueuedMessagesList";
 import {
   currentComponentCoordinatesAtom,
-  pendingVisualChangesAtom,
   previewIframeRefAtom,
   selectedComponentsPreviewAtom,
   visualEditingSelectedComponentAtom,
@@ -145,7 +144,6 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const setCurrentComponentCoordinates = useSetAtom(
     currentComponentCoordinatesAtom,
   );
-  const setPendingVisualChanges = useSetAtom(pendingVisualChangesAtom);
   const sendPreviewIframeEvent = useSendPreviewIframeEvent(appId);
   const store = useStore();
   const userInputReadModel = getUserInputReadModel({ store });
@@ -676,7 +674,6 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               sendPreviewIframeEvent({ type: "PICKER_DEACTIVATED" });
               setVisualEditingSelectedComponent(null);
               setCurrentComponentCoordinates(null);
-              setPendingVisualChanges(new Map());
               refreshAppIframe();
             }}
           />

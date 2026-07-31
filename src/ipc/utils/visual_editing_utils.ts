@@ -9,6 +9,16 @@ interface ContentChange {
   imageSrc?: string;
 }
 
+export interface ContentTransformLocationResult {
+  applied: boolean;
+  reason?: string;
+}
+
+export interface ContentTransformResult {
+  content: string;
+  locations: Map<number | string, ContentTransformLocationResult>;
+}
+
 interface ComponentAnalysis {
   isDynamic: boolean;
   hasStaticText: boolean;
@@ -48,6 +58,13 @@ export function transformContent(
   content: string,
   changes: Map<number | string, ContentChange>,
 ): string {
+  return transformContentWithResult(content, changes).content;
+}
+
+export function transformContentWithResult(
+  content: string,
+  changes: Map<number | string, ContentChange>,
+): ContentTransformResult {
   // Parse with babel for compatibility with JSX/TypeScript
   const ast = parse(content, {
     sourceType: "module",
@@ -55,6 +72,10 @@ export function transformContent(
   });
 
   const processedLocations = new Set<number | string>();
+  const locationResults = new Map<
+    number | string,
+    ContentTransformLocationResult
+  >();
 
   traverse(ast, {
     JSXElement(path) {
@@ -77,25 +98,84 @@ export function transformContent(
         processedLocations.add(changeLocation);
         const change = changes.get(changeLocation)!;
 
-        // Check if this element has any nested JSX elements as direct children
-        const hasNestedJSX = path.node.children.some(
-          (child: any) => child.type === "JSXElement",
+        const attributes = path.node.openingElement.attributes;
+        const classNameAttr = attributes.find(
+          (attr: any) =>
+            attr.type === "JSXAttribute" && attr.name.name === "className",
+        ) as any;
+        const hasStaticClassName =
+          !classNameAttr ||
+          classNameAttr.value?.type === "StringLiteral" ||
+          (classNameAttr.value?.type === "JSXExpressionContainer" &&
+            classNameAttr.value.expression.type === "StringLiteral");
+        const hasOnlyTextChildren = path.node.children.every((child: any) => {
+          if (child.type === "JSXElement") return false;
+          return (
+            child.type === "JSXText" ||
+            (child.type === "JSXExpressionContainer" &&
+              child.expression.type === "StringLiteral")
+          );
+        });
+        const tagName = path.node.openingElement.name;
+        let targetImageElement: any = null;
+        if (change.imageSrc !== undefined) {
+          if (tagName.type === "JSXIdentifier" && tagName.name === "img") {
+            targetImageElement = path.node.openingElement;
+          } else {
+            path.traverse({
+              JSXElement(innerPath) {
+                if (
+                  innerPath.node.openingElement.name.type === "JSXIdentifier" &&
+                  innerPath.node.openingElement.name.name === "img"
+                ) {
+                  targetImageElement = innerPath.node.openingElement;
+                  innerPath.stop();
+                }
+              },
+            });
+          }
+        }
+        const targetImageSrc = targetImageElement?.attributes.find(
+          (attr: any) =>
+            attr.type === "JSXAttribute" && attr.name?.name === "src",
         );
+        const hasDynamicImageSrc =
+          targetImageSrc?.value !== undefined &&
+          targetImageSrc.value.type !== "StringLiteral" &&
+          !(
+            targetImageSrc.value.type === "JSXExpressionContainer" &&
+            targetImageSrc.value.expression.type === "StringLiteral"
+          );
+        const hasStyleChange = change.classes.length > 0;
+        const hasTextChange = change.textContent !== undefined;
+        const hasImageChange = change.imageSrc !== undefined;
 
-        // Skip text content modification if there are nested elements
-        const shouldModifyText =
-          "textContent" in change &&
-          change.textContent !== undefined &&
-          !hasNestedJSX;
+        let unsupportedReason: string | undefined;
+        if (hasStyleChange && !hasStaticClassName) {
+          unsupportedReason = "Dynamic class names cannot be edited visually.";
+        } else if (hasTextChange && !hasOnlyTextChildren) {
+          unsupportedReason = "Text content is not statically editable.";
+        } else if (hasImageChange && !targetImageElement) {
+          unsupportedReason = "No editable image was found in the component.";
+        } else if (hasImageChange && hasDynamicImageSrc) {
+          unsupportedReason =
+            "Dynamic image sources cannot be edited visually.";
+        } else if (!hasStyleChange && !hasTextChange && !hasImageChange) {
+          unsupportedReason = "No supported visual changes were provided.";
+        }
+
+        if (unsupportedReason) {
+          locationResults.set(changeLocation, {
+            applied: false,
+            reason: unsupportedReason,
+          });
+          return;
+        }
+
+        let didChange = false;
 
         // Update className if there are style changes
-        if (change.classes.length > 0) {
-          const attributes = path.node.openingElement.attributes;
-          let classNameAttr = attributes.find(
-            (attr: any) =>
-              attr.type === "JSXAttribute" && attr.name.name === "className",
-          ) as any;
-
+        if (hasStyleChange) {
           if (classNameAttr) {
             // Get existing classes
             let existingClasses: string[] = [];
@@ -223,13 +303,22 @@ export function transformContent(
               ...filteredClasses,
               ...addedClasses,
               ...change.classes,
-            ].join(" ");
+            ];
 
-            // Update the className value
-            classNameAttr.value = {
-              type: "StringLiteral",
-              value: updatedClasses,
-            };
+            const existingClassSet = new Set(existingClasses);
+            const updatedClassSet = new Set(updatedClasses);
+            const classesDiffer =
+              existingClassSet.size !== updatedClassSet.size ||
+              [...existingClassSet].some(
+                (className) => !updatedClassSet.has(className),
+              );
+            if (classesDiffer) {
+              classNameAttr.value = {
+                type: "StringLiteral",
+                value: updatedClasses.join(" "),
+              };
+              didChange = true;
+            }
           } else {
             // Add className attribute
             attributes.push({
@@ -240,23 +329,17 @@ export function transformContent(
                 value: change.classes.join(" "),
               },
             });
+            didChange = true;
           }
         }
 
-        if (shouldModifyText) {
-          // Check if all children are text nodes (no nested JSX elements)
-          const hasOnlyTextChildren = path.node.children.every((child: any) => {
-            // JSXElement means there's a nested component/element
-            if (child.type === "JSXElement") return false;
-            return (
-              child.type === "JSXText" ||
-              (child.type === "JSXExpressionContainer" &&
-                child.expression.type === "StringLiteral")
-            );
-          });
-
-          // Only replace children if there are no nested JSX elements
-          if (hasOnlyTextChildren) {
+        if (hasTextChange) {
+          const existingText = path.node.children
+            .map((child: any) =>
+              child.type === "JSXText" ? child.value : child.expression.value,
+            )
+            .join("");
+          if (existingText !== change.textContent) {
             path.node.children = [
               {
                 type: "JSXExpressionContainer",
@@ -266,64 +349,64 @@ export function transformContent(
                 },
               } as any,
             ];
+            didChange = true;
           }
         }
 
         // Handle image source change
-        if (change.imageSrc !== undefined) {
-          const tagName = path.node.openingElement.name;
-
-          // Determine which element to update (self or descendant <img>)
-          let targetElement: any = null;
-          if (tagName.type === "JSXIdentifier" && tagName.name === "img") {
-            targetElement = path.node.openingElement;
+        if (
+          hasImageChange &&
+          extractStaticSrc(targetImageElement) !== change.imageSrc
+        ) {
+          if (targetImageSrc) {
+            targetImageSrc.value = {
+              type: "StringLiteral",
+              value: change.imageSrc,
+            };
           } else {
-            // Recursively search for the first <img> descendant
-            path.traverse({
-              JSXElement(innerPath) {
-                if (
-                  innerPath.node.openingElement.name.type === "JSXIdentifier" &&
-                  innerPath.node.openingElement.name.name === "img"
-                ) {
-                  targetElement = innerPath.node.openingElement;
-                  innerPath.stop();
-                }
+            targetImageElement.attributes.push({
+              type: "JSXAttribute",
+              name: { type: "JSXIdentifier", name: "src" },
+              value: {
+                type: "StringLiteral",
+                value: change.imageSrc,
               },
             });
           }
-
-          if (targetElement) {
-            const srcAttr = targetElement.attributes.find(
-              (attr: any) =>
-                attr.type === "JSXAttribute" && attr.name?.name === "src",
-            );
-
-            if (srcAttr) {
-              // Replace the value with a string literal
-              srcAttr.value = {
-                type: "StringLiteral",
-                value: change.imageSrc,
-              };
-            } else {
-              // Add src attribute
-              targetElement.attributes.push({
-                type: "JSXAttribute",
-                name: { type: "JSXIdentifier", name: "src" },
-                value: {
-                  type: "StringLiteral",
-                  value: change.imageSrc,
-                },
-              });
-            }
-          }
+          didChange = true;
         }
+
+        locationResults.set(
+          changeLocation,
+          didChange
+            ? { applied: true }
+            : {
+                applied: false,
+                reason:
+                  "The requested visual changes already match the source.",
+              },
+        );
       }
     },
   });
 
   // Use recast to generate code with preserved formatting
   const output = recast.print(ast);
-  return output.code;
+  for (const location of changes.keys()) {
+    if (!processedLocations.has(location)) {
+      locationResults.set(location, {
+        applied: false,
+        reason: "Component location was not found in the source file.",
+      });
+    }
+  }
+  const hasAppliedChange = [...locationResults.values()].some(
+    (result) => result.applied,
+  );
+  return {
+    content: hasAppliedChange ? output.code : content,
+    locations: locationResults,
+  };
 }
 
 /**

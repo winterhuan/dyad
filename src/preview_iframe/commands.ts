@@ -1,5 +1,6 @@
 import type { createStore } from "jotai";
 import { selectedComponentsPreviewAtom } from "@/atoms/previewAtoms";
+import type { ComponentSelection } from "@/ipc/types/visual-editing";
 import type { PreviewIframeCommandRunner } from "./controller";
 import type { PreviewIframeEvent, PreviewIframePostMessage } from "./state";
 
@@ -90,6 +91,20 @@ export const PREVIEW_IFRAME_MESSAGE_ROUTES: Readonly<
   replaceState: "machine",
 };
 
+export function isTextEditingMessageForSelectedComponent(
+  data: { componentId?: unknown; runtimeId?: unknown },
+  selectedComponent: Pick<ComponentSelection, "id" | "runtimeId"> | null,
+): boolean {
+  if (!selectedComponent || data.componentId !== selectedComponent.id) {
+    return false;
+  }
+  return (
+    !selectedComponent.runtimeId ||
+    data.runtimeId === undefined ||
+    data.runtimeId === selectedComponent.runtimeId
+  );
+}
+
 export type PreviewSharedMachineEvent =
   | { type: "SELECTOR_READY" }
   | {
@@ -116,6 +131,14 @@ export function routePreviewIframeMessage(input: {
     onComponentMessage,
   } = input;
   if (event.source !== contentWindow) return;
+  if (!appUrl) return;
+  let trustedAppUrl: URL;
+  try {
+    trustedAppUrl = new URL(appUrl);
+  } catch {
+    return;
+  }
+  if (event.origin !== trustedAppUrl.origin) return;
   const type = event.data?.type as string | undefined;
   const route =
     type && type in PREVIEW_IFRAME_MESSAGE_ROUTES
@@ -139,9 +162,8 @@ export function routePreviewIframeMessage(input: {
     }
   } else if (type === "pushState" || type === "replaceState") {
     const rawUrl = event.data?.payload?.newUrl;
-    if (typeof rawUrl === "string" && rawUrl && appUrl) {
+    if (typeof rawUrl === "string" && rawUrl) {
       try {
-        const trustedAppUrl = new URL(appUrl);
         const url = new URL(rawUrl, trustedAppUrl);
         if (url.origin !== trustedAppUrl.origin) return;
         send({ type: "NAVIGATED_IN_APP", kind: type, url: url.href });

@@ -138,6 +138,8 @@ export type {
   SetUserSettingsOutput,
   ValidateProviderApiKeyInput,
   ValidateProviderApiKeyOutput,
+  WebSearchCredentialProvider,
+  WebSearchCredentialStatus,
 } from "./settings";
 
 // App types
@@ -175,6 +177,7 @@ export type {
   ComponentSelection,
   VisualEditingChange,
   ApplyVisualEditingChangesParams,
+  ApplyVisualEditingChangesResult,
   AnalyseComponentParams,
 } from "./visual-editing";
 

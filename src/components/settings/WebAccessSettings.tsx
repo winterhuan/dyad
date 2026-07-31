@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { KeyRound, Save, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { KeyRound, RefreshCw, Save, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,43 +14,42 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useSettings } from "@/hooks/useSettings";
+import { ipc } from "@/ipc/types";
 import {
   WEB_SEARCH_BRAVE_PROVIDER_ID,
   WEB_SEARCH_EXA_PROVIDER_ID,
 } from "@/lib/schemas";
+import { queryKeys } from "@/lib/queryKeys";
 import { showError, showSuccess } from "@/lib/toast";
 
 type SearchProviderId =
   | typeof WEB_SEARCH_EXA_PROVIDER_ID
   | typeof WEB_SEARCH_BRAVE_PROVIDER_ID;
 
-function maskKey(value: string | undefined): string {
-  if (!value) return "Not configured";
-  if (value.length < 12) return "********";
-  return `${value.slice(0, 4)}********${value.slice(-4)}`;
-}
-
 function ApiKeySetting({
   label,
   providerId,
-  savedValue,
+  hasSavedValue,
+  isUpdating,
+  isTesting,
   onSave,
+  onDelete,
+  onTest,
 }: {
   label: string;
   providerId: SearchProviderId;
-  savedValue?: string;
-  onSave: (
-    providerId: SearchProviderId,
-    value: string | undefined,
-  ) => Promise<void>;
+  hasSavedValue: boolean;
+  isUpdating: boolean;
+  isTesting: boolean;
+  onSave: (providerId: SearchProviderId, value: string) => Promise<unknown>;
+  onDelete: (providerId: SearchProviderId) => Promise<unknown>;
+  onTest: (providerId: SearchProviderId) => Promise<unknown>;
 }) {
   const [value, setValue] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
 
   const save = async () => {
     const apiKey = value.trim();
     if (!apiKey) return;
-    setIsSaving(true);
     try {
       await onSave(providerId, apiKey);
       setValue("");
@@ -58,22 +58,28 @@ function ApiKeySetting({
       showError(
         error instanceof Error ? error.message : `Failed to save ${label}`,
       );
-    } finally {
-      setIsSaving(false);
     }
   };
 
   const remove = async () => {
-    setIsSaving(true);
     try {
-      await onSave(providerId, undefined);
+      await onDelete(providerId);
       showSuccess(`${label} deleted`);
     } catch (error) {
       showError(
         error instanceof Error ? error.message : `Failed to delete ${label}`,
       );
-    } finally {
-      setIsSaving(false);
+    }
+  };
+
+  const test = async () => {
+    try {
+      await onTest(providerId);
+      showSuccess(`${label} connection succeeded`);
+    } catch (error) {
+      showError(
+        error instanceof Error ? error.message : `Failed to test ${label}`,
+      );
     }
   };
 
@@ -82,7 +88,7 @@ function ApiKeySetting({
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor={`${providerId}-key`}>{label}</Label>
         <span className="font-mono text-xs text-muted-foreground">
-          {maskKey(savedValue)}
+          {hasSavedValue ? "Configured" : "Not configured"}
         </span>
       </div>
       <div className="flex items-center gap-2">
@@ -96,7 +102,7 @@ function ApiKeySetting({
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder={
-              savedValue ? "Enter a replacement key" : "Enter API key"
+              hasSavedValue ? "Enter a replacement key" : "Enter API key"
             }
             className="pl-9"
           />
@@ -105,18 +111,30 @@ function ApiKeySetting({
           type="button"
           size="sm"
           onClick={save}
-          disabled={isSaving || !value.trim()}
+          disabled={isUpdating || isTesting || !value.trim()}
         >
           <Save />
           Save
         </Button>
-        {savedValue && (
+        {hasSavedValue && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={test}
+            disabled={isUpdating || isTesting}
+          >
+            <RefreshCw className={isTesting ? "animate-spin" : undefined} />
+            Test
+          </Button>
+        )}
+        {hasSavedValue && (
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={remove}
-            disabled={isSaving}
+            disabled={isUpdating || isTesting}
           >
             <Trash2 />
             Delete
@@ -129,38 +147,37 @@ function ApiKeySetting({
 
 export function WebAccessSettings() {
   const { settings, updateSettings } = useSettings();
+  const queryClient = useQueryClient();
   const enabled = settings?.enableWebAccess === true;
-  const settingsRef = useRef(settings);
-  const updateQueueRef = useRef<Promise<void>>(Promise.resolve());
-
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-
-  const updateApiKey = useCallback(
-    (providerId: SearchProviderId, value: string | undefined) => {
-      const update = updateQueueRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          const currentSettings = settingsRef.current;
-          const currentProvider =
-            currentSettings?.providerSettings[providerId] ?? {};
-          const updatedSettings = await updateSettings({
-            providerSettings: {
-              ...currentSettings?.providerSettings,
-              [providerId]: {
-                ...currentProvider,
-                apiKey: value === undefined ? undefined : { value },
-              },
-            },
-          });
-          settingsRef.current = updatedSettings;
-        });
-      updateQueueRef.current = update;
-      return update;
+  const credentialsQuery = useQuery({
+    queryKey: queryKeys.settings.webSearchCredentials,
+    queryFn: () => ipc.settings.getWebSearchCredentialStatus(),
+    meta: { showErrorToast: true },
+  });
+  const credentialMutation = useMutation({
+    mutationFn: ({
+      providerId,
+      value,
+    }: {
+      providerId: SearchProviderId;
+      value?: string;
+    }) => {
+      const provider =
+        providerId === WEB_SEARCH_EXA_PROVIDER_ID ? "exa" : "brave";
+      return value === undefined
+        ? ipc.settings.deleteWebSearchApiKey({ provider })
+        : ipc.settings.setWebSearchApiKey({ provider, apiKey: value });
     },
-    [updateSettings],
-  );
+    onSuccess: (status) => {
+      queryClient.setQueryData(queryKeys.settings.webSearchCredentials, status);
+    },
+  });
+  const testMutation = useMutation({
+    mutationFn: (providerId: SearchProviderId) =>
+      ipc.settings.testWebSearchProvider({
+        provider: providerId === WEB_SEARCH_EXA_PROVIDER_ID ? "exa" : "brave",
+      }),
+  });
 
   return (
     <div className="space-y-4">
@@ -207,20 +224,36 @@ export function WebAccessSettings() {
           <ApiKeySetting
             label="Exa API key"
             providerId={WEB_SEARCH_EXA_PROVIDER_ID}
-            savedValue={
-              settings?.providerSettings[WEB_SEARCH_EXA_PROVIDER_ID]?.apiKey
-                ?.value
+            hasSavedValue={credentialsQuery.data?.hasExaKey === true}
+            isUpdating={credentialMutation.isPending}
+            isTesting={
+              testMutation.isPending &&
+              testMutation.variables === WEB_SEARCH_EXA_PROVIDER_ID
             }
-            onSave={updateApiKey}
+            onSave={(providerId, value) =>
+              credentialMutation.mutateAsync({ providerId, value })
+            }
+            onDelete={(providerId) =>
+              credentialMutation.mutateAsync({ providerId })
+            }
+            onTest={(providerId) => testMutation.mutateAsync(providerId)}
           />
           <ApiKeySetting
             label="Brave Search API key"
             providerId={WEB_SEARCH_BRAVE_PROVIDER_ID}
-            savedValue={
-              settings?.providerSettings[WEB_SEARCH_BRAVE_PROVIDER_ID]?.apiKey
-                ?.value
+            hasSavedValue={credentialsQuery.data?.hasBraveKey === true}
+            isUpdating={credentialMutation.isPending}
+            isTesting={
+              testMutation.isPending &&
+              testMutation.variables === WEB_SEARCH_BRAVE_PROVIDER_ID
             }
-            onSave={updateApiKey}
+            onSave={(providerId, value) =>
+              credentialMutation.mutateAsync({ providerId, value })
+            }
+            onDelete={(providerId) =>
+              credentialMutation.mutateAsync({ providerId })
+            }
+            onTest={(providerId) => testMutation.mutateAsync(providerId)}
           />
         </div>
       )}

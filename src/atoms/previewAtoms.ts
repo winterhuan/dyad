@@ -34,6 +34,35 @@ export const clearPendingVisualChangesForAppAtom = atom(
   },
 );
 
+export const setPendingVisualChangesForAppAtom = atom(
+  null,
+  (
+    get,
+    set,
+    {
+      appId,
+      changes,
+    }: {
+      appId: number;
+      changes:
+        | Map<string, VisualEditingChange>
+        | ((
+            current: Map<string, VisualEditingChange>,
+          ) => Map<string, VisualEditingChange>);
+    },
+  ) => {
+    const byApp = new Map(get(pendingVisualChangesByAppAtom));
+    const current = byApp.get(appId) ?? new Map<string, VisualEditingChange>();
+    const next = typeof changes === "function" ? changes(current) : changes;
+    if (next.size === 0) {
+      byApp.delete(appId);
+    } else {
+      byApp.set(appId, next);
+    }
+    set(pendingVisualChangesByAppAtom, byApp);
+  },
+);
+
 export const pendingVisualChangesAtom = atom(
   (get) => {
     const appId = get(selectedAppIdAtom);

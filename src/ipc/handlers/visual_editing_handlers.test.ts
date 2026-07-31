@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   gitAdd: vi.fn(),
   gitCommit: vi.fn(),
   gitResetFile: vi.fn(),
+  ensureDyadGitignored: vi.fn(),
   findFirst: vi.fn(),
+  transformContentWithResult: vi.fn(),
 }));
 
 vi.mock("@/ipc/handlers/base", () => ({
@@ -36,14 +38,14 @@ vi.mock("@/ipc/utils/git_utils", () => ({
   gitResetFile: mocks.gitResetFile,
 }));
 vi.mock("@/ipc/handlers/gitignoreUtils", () => ({
-  ensureDyadGitignored: vi.fn(),
+  ensureDyadGitignored: mocks.ensureDyadGitignored,
 }));
 vi.mock("@/utils/style-utils", () => ({
   stylesToTailwind: () => ["ml-2"],
   extractClassPrefixes: () => ["ml"],
 }));
 vi.mock("@/ipc/utils/visual_editing_utils", () => ({
-  transformContent: (content: string) => `${content}\nchanged`,
+  transformContentWithResult: mocks.transformContentWithResult,
   analyzeComponent: vi.fn(),
 }));
 
@@ -56,6 +58,18 @@ describe("visual editing handlers", () => {
     mocks.handlers.clear();
     mocks.appPath = await fs.mkdtemp(
       path.join(os.tmpdir(), "dyad-visual-edit-"),
+    );
+    mocks.gitCommit.mockResolvedValue("commit-hash");
+    mocks.ensureDyadGitignored.mockImplementation(async (appPath: string) => {
+      await fs.writeFile(path.join(appPath, ".gitignore"), ".dyad/\n");
+    });
+    mocks.transformContentWithResult.mockImplementation(
+      (content: string, changes: Map<number | string, unknown>) => ({
+        content: `${content}\nchanged`,
+        locations: new Map(
+          [...changes.keys()].map((location) => [location, { applied: true }]),
+        ),
+      }),
     );
     await fs.mkdir(path.join(mocks.appPath, ".git"));
     await fs.writeFile(path.join(mocks.appPath, "One.tsx"), "one");
@@ -74,7 +88,7 @@ describe("visual editing handlers", () => {
     );
     expect(handler).toBeDefined();
 
-    await handler!(
+    const result = await handler!(
       {},
       {
         appId: 1,
@@ -104,6 +118,60 @@ describe("visual editing handlers", () => {
       message: "Apply visual editing changes",
       paths: ["One.tsx", "Two.tsx"],
     });
+    expect(result).toEqual({
+      modifiedFiles: ["One.tsx", "Two.tsx"],
+      commitHash: "commit-hash",
+      appliedCount: 2,
+      skipped: [],
+    });
+  });
+
+  it("reports a component that no longer exists without committing", async () => {
+    mocks.transformContentWithResult.mockReturnValueOnce({
+      content: "one",
+      locations: new Map([
+        [
+          "99:1",
+          {
+            applied: false,
+            reason: "Component location was not found in the source file.",
+          },
+        ],
+      ]),
+    });
+    const handler = mocks.handlers.get(
+      visualEditingContracts.applyChanges.channel,
+    );
+
+    const result = await handler!(
+      {},
+      {
+        appId: 1,
+        changes: [
+          {
+            componentId: "One.tsx:99:1",
+            componentName: "div",
+            relativePath: "One.tsx",
+            lineNumber: 99,
+            columnNumber: 1,
+            styles: { margin: { left: "8px" } },
+          },
+        ],
+      },
+    );
+
+    expect(result).toEqual({
+      modifiedFiles: [],
+      commitHash: null,
+      appliedCount: 0,
+      skipped: [
+        {
+          componentId: "One.tsx:99:1",
+          reason: "Component location was not found in the source file.",
+        },
+      ],
+    });
+    expect(mocks.gitCommit).not.toHaveBeenCalled();
   });
 
   it("uses distinct paths for same-named image uploads", async () => {
@@ -112,7 +180,7 @@ describe("visual editing handlers", () => {
     );
     expect(handler).toBeDefined();
 
-    await handler!(
+    const result = await handler!(
       {},
       {
         appId: 1,
@@ -145,11 +213,75 @@ describe("visual editing handlers", () => {
       },
     );
 
-    const imagePaths = mocks.gitAdd.mock.calls.map(
-      ([params]) => params.filepath as string,
-    );
+    const imagePaths = mocks.gitAdd.mock.calls
+      .map(([params]) => params.filepath as string)
+      .filter((filepath) => filepath !== ".gitignore");
     expect(imagePaths).toHaveLength(2);
     expect(new Set(imagePaths).size).toBe(2);
+    expect(result).toMatchObject({
+      modifiedFiles: expect.arrayContaining([".gitignore", ...imagePaths]),
+    });
+    expect(mocks.gitCommit).toHaveBeenCalledWith({
+      path: mocks.appPath,
+      message: "Apply visual editing changes",
+      paths: expect.arrayContaining([".gitignore", ...imagePaths]),
+    });
+  });
+
+  it("restores all files and staged paths when the batch commit fails", async () => {
+    mocks.gitCommit.mockRejectedValueOnce(new Error("commit failed"));
+    const handler = mocks.handlers.get(
+      visualEditingContracts.applyChanges.channel,
+    );
+    expect(handler).toBeDefined();
+
+    await expect(
+      handler!(
+        {},
+        {
+          appId: 1,
+          changes: [
+            {
+              componentId: "One.tsx:1:1",
+              componentName: "img",
+              relativePath: "One.tsx",
+              lineNumber: 1,
+              styles: {},
+              imageUpload: {
+                fileName: "photo.png",
+                base64Data: "data:image/png;base64,YQ==",
+                mimeType: "image/png",
+              },
+            },
+          ],
+        },
+      ),
+    ).rejects.toThrow("commit failed");
+
+    const imagePath = mocks.gitAdd.mock.calls
+      .map(([params]) => params.filepath as string)
+      .find((filepath) => filepath !== ".gitignore");
+    expect(imagePath).toBeDefined();
+    await expect(
+      fs.readFile(path.join(mocks.appPath, "One.tsx"), "utf-8"),
+    ).resolves.toBe("one");
+    await expect(
+      fs.access(path.join(mocks.appPath, ".gitignore")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      fs.access(path.join(mocks.appPath, imagePath!)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      fs.readdir(path.join(mocks.appPath, ".dyad", "media")),
+    ).resolves.toEqual([]);
+    expect(mocks.gitResetFile).toHaveBeenCalledWith({
+      path: mocks.appPath,
+      filepath: ".gitignore",
+    });
+    expect(mocks.gitResetFile).toHaveBeenCalledWith({
+      path: mocks.appPath,
+      filepath: imagePath,
+    });
   });
 
   it("rejects source files that escape the app through a symlink", async () => {

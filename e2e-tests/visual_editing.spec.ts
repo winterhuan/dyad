@@ -1,6 +1,5 @@
 import { expect, type Page } from "@playwright/test";
 import { testSkipIfWindows, Timeout } from "./helpers/test_helper";
-import { FAKE_LLM_BASE_PORT } from "./helpers/test-ports";
 const fs = require("fs");
 const path = require("path");
 
@@ -16,8 +15,8 @@ async function saveVisualChanges(page: Page) {
 }
 
 testSkipIfWindows("discard style edits and save text edits", async ({ po }) => {
-  await po.sendPrompt("tc=basic");
-  await po.previewPanel.clickTogglePreviewPanel();
+  await po.setUp();
+  await po.importApp("select-component");
   await po.previewPanel.clickPreviewPickElement();
 
   const frame = po.previewPanel.getPreviewIframeElement().contentFrame();
@@ -72,9 +71,7 @@ testSkipIfWindows("discard style edits and save text edits", async ({ po }) => {
   });
 
   await saveVisualChanges(po.page);
-  await po.toastNotifications.waitForToastWithText(
-    "Visual changes saved to source files",
-  );
+  await po.toastNotifications.waitForToastWithText("1 visual change saved");
   await po.snapshotAppFiles({
     name: "visual-editing-text-content",
     files: ["src/pages/Index.tsx"],
@@ -82,7 +79,8 @@ testSkipIfWindows("discard style edits and save text edits", async ({ po }) => {
 });
 
 testSkipIfWindows("swap image via URL", async ({ po }) => {
-  await po.sendPrompt("tc=local-agent/visual-editing-image");
+  await po.setUp();
+  await po.importApp("select-component");
   await po.previewPanel.clickPreviewPickElement();
 
   const heroImage = po.previewPanel
@@ -112,7 +110,7 @@ testSkipIfWindows("swap image via URL", async ({ po }) => {
   await expect(imagePopover).toBeVisible({ timeout: Timeout.LONG });
   await po.page
     .getByLabel("Image URL")
-    .fill(`http://localhost:${FAKE_LLM_BASE_PORT}/test-image.png`);
+    .fill(`http://localhost:${po.fakeLlmPort}/test-image.png`);
   await po.page.getByRole("button", { name: "Apply" }).click();
   await po.page.keyboard.press("Escape");
 
@@ -120,9 +118,7 @@ testSkipIfWindows("swap image via URL", async ({ po }) => {
     timeout: Timeout.MEDIUM,
   });
   await saveVisualChanges(po.page);
-  await po.toastNotifications.waitForToastWithText(
-    "Visual changes saved to source files",
-  );
+  await po.toastNotifications.waitForToastWithText("1 visual change saved");
   await po.snapshotAppFiles({
     name: "visual-editing-swap-image",
     files: ["src/pages/Index.tsx"],
