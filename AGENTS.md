@@ -187,6 +187,10 @@ See [rules/e2e-testing.md](rules/e2e-testing.md) for full E2E testing guidance, 
 
 ## Git workflow
 
+> **`winter` branch publishing policy:** Commit and push changes only to
+> `fork/winter`. Do not create, update, reopen, comment on, or otherwise modify
+> any pull request. This policy overrides the general PR workflow below.
+
 When pushing changes and creating PRs:
 
 1. If the branch already has an associated PR, push to whichever remote the branch is tracking.
