@@ -62,6 +62,10 @@ layer around the adapter.
 - Resolve every app path through the existing path-safety helpers.
 - Reject absolute paths, traversal, symlink escapes, and protected `.dyad`
   access as appropriate.
+- When a project file is discovered and read later, do not rely on a pre-read
+  `stat` or `realpath`: open it with bounded/non-blocking flags, validate the
+  opened handle against a post-open contained path and file identity, then read
+  a fixed byte budget. This closes symlink-swap and file-growth races.
 - Reads of referenced apps are read-only; write tools must remain scoped to the
   current app.
 - Native Git inspection can execute repository-local hooks or filters. Disable

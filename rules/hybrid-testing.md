@@ -141,6 +141,9 @@ For cross-platform path assertions, match the path contract being exercised.
 Use `path.normalize()` when the code preserves a rooted path such as `/tmp/...`;
 `path.resolve()` adds the runner's current drive on Windows and is only correct
 when production code also resolves the path to an absolute drive-qualified one.
+Directory-symlink fixtures must use an absolute target with type `junction` on
+Windows (or skip there), and path assertions must use `path.join`/`path.sep`
+rather than hard-coded `/` separators.
 
 For asynchronous Git actions driven through the renderer, file existence can
 change before the underlying Git subprocess finishes. Wait for the expected

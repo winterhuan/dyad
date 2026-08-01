@@ -35,9 +35,17 @@ const MAX_SKILL_DIRECTORIES = 2000;
 const MAX_SKILL_FILE_BYTES = 512 * 1024;
 /** Upper bound on the frontmatter block; longer blocks are rejected. */
 const MAX_FRONTMATTER_BYTES = 16 * 1024;
+/** Aggregate frontmatter bytes read during one discovery pass. */
+const MAX_DISCOVERY_READ_BYTES = 8 * 1024 * 1024;
+const MAX_FRONTMATTER_SCAN_BYTES = MAX_FRONTMATTER_BYTES + 4;
 /** Upper bound on a skill description before truncation (UTF-8 bytes). */
 const MAX_SKILL_DESCRIPTION_BYTES = 2048;
+const MAX_LOGGED_SKILL_NAME_BYTES = 256;
 const SKIPPED_DIR_NAMES = new Set(["node_modules", ".git", "dist", "build"]);
+const SKILL_READ_FLAGS =
+  fs.constants.O_RDONLY |
+  (fs.constants.O_NONBLOCK ?? 0) |
+  (fs.constants.O_NOFOLLOW ?? 0);
 
 const SKILL_MD_NAME = "SKILL.md";
 
@@ -56,26 +64,42 @@ export interface ParsedSkillFrontmatter {
   body: string;
 }
 
+export interface ProjectSkillFileRead {
+  content: string;
+  bytesRead: number;
+  resolvedPath: string;
+}
+
 /**
  * Truncate `text` to at most `maxBytes` UTF-8 bytes without splitting a
- * multi-byte character (binary search over character count).
+ * Unicode code point.
  */
 export function truncateUtf8(text: string, maxBytes: number): string {
-  if (Buffer.byteLength(text, "utf8") <= maxBytes) {
-    return text;
-  }
-  let end = text.length;
-  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") > maxBytes) {
-    end = Math.floor(end / 2);
-  }
-  // Grow back to the largest prefix within the limit (linear-ish, bounded).
-  while (
-    end < text.length &&
-    Buffer.byteLength(text.slice(0, end + 1), "utf8") <= maxBytes
-  ) {
-    end += 1;
+  if (maxBytes <= 0) return "";
+
+  let bytes = 0;
+  let end = 0;
+  while (end < text.length) {
+    const codePoint = text.codePointAt(end)!;
+    const codeUnits = codePoint > 0xffff ? 2 : 1;
+    const codePointBytes =
+      codePoint <= 0x7f
+        ? 1
+        : codePoint <= 0x7ff
+          ? 2
+          : codePoint <= 0xffff
+            ? 3
+            : 4;
+    if (bytes + codePointBytes > maxBytes) break;
+    bytes += codePointBytes;
+    end += codeUnits;
   }
   return text.slice(0, end);
+}
+
+function formatSkillNameForLog(name: string): string {
+  const truncated = truncateUtf8(name, MAX_LOGGED_SKILL_NAME_BYTES);
+  return truncated === name ? name : `${truncated}...`;
 }
 
 /**
@@ -99,12 +123,12 @@ export function parseSkillFrontmatter(
   let currentKey: string | undefined;
   const values: string[] = [];
   let closingIndex = -1;
-  let frontmatterBytes = lines[0].length + 1;
+  let frontmatterBytes = Buffer.byteLength(lines[0], "utf8") + 1;
 
   for (let index = 1; index < lines.length; index++) {
     const line = lines[index];
     const trimmed = line.trim();
-    frontmatterBytes += line.length + 1;
+    frontmatterBytes += Buffer.byteLength(line, "utf8") + 1;
     if (frontmatterBytes > MAX_FRONTMATTER_BYTES) {
       return null;
     }
@@ -150,6 +174,101 @@ export function parseSkillFrontmatter(
   return { fields, body };
 }
 
+function isPathInside(parent: string, candidate: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return (
+    relative !== "" &&
+    !relative.startsWith(`..${path.sep}`) &&
+    relative !== ".." &&
+    !path.isAbsolute(relative)
+  );
+}
+
+function isSameFile(left: fs.Stats, right: fs.Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function readOpenedFile(
+  fileHandle: fs.promises.FileHandle,
+  maxBytes: number,
+): Promise<{ content: string; bytesRead: number }> {
+  const buffer = Buffer.alloc(maxBytes);
+  let total = 0;
+  while (total < maxBytes) {
+    const result = await fileHandle.read(
+      buffer,
+      total,
+      maxBytes - total,
+      total,
+    );
+    if (result.bytesRead === 0) break;
+    total += result.bytesRead;
+  }
+  return {
+    content: buffer.subarray(0, total).toString("utf8"),
+    bytesRead: total,
+  };
+}
+
+async function readProjectSkillFileFromResolvedApp(
+  realAppPath: string,
+  skillMdPath: string,
+  maxReadBytes: number,
+): Promise<ProjectSkillFileRead> {
+  const fileHandle = await fs.promises.open(skillMdPath, SKILL_READ_FLAGS);
+  try {
+    const openedStat = await fileHandle.stat();
+    if (!openedStat.isFile()) {
+      throw new Error("SKILL.md is not a regular file");
+    }
+    if (openedStat.size > MAX_SKILL_FILE_BYTES) {
+      throw new Error(
+        `file is ${openedStat.size} bytes, exceeding ${MAX_SKILL_FILE_BYTES}`,
+      );
+    }
+
+    // Validate the path after opening it, then compare identities. If any path
+    // component was swapped to a symlink during open, the resolved path either
+    // escapes the app or no longer identifies the opened file.
+    const resolvedPath = await fs.promises.realpath(skillMdPath);
+    if (!isPathInside(realAppPath, resolvedPath)) {
+      throw new Error("SKILL.md resolves outside the app directory");
+    }
+    const resolvedStat = await fs.promises.stat(resolvedPath);
+    if (!isSameFile(openedStat, resolvedStat)) {
+      throw new Error("SKILL.md changed while it was being opened");
+    }
+
+    const readLimit = Math.min(openedStat.size, maxReadBytes);
+    const result = await readOpenedFile(fileHandle, readLimit);
+    const finalStat = await fileHandle.stat();
+    if (!isSameFile(openedStat, finalStat)) {
+      throw new Error("SKILL.md changed identity while it was being read");
+    }
+    if (finalStat.size > MAX_SKILL_FILE_BYTES) {
+      throw new Error(
+        `file grew to ${finalStat.size} bytes, exceeding ${MAX_SKILL_FILE_BYTES}`,
+      );
+    }
+    return { ...result, resolvedPath };
+  } finally {
+    await fileHandle.close();
+  }
+}
+
+/** Securely and boundedly read a discovered SKILL.md at invocation time. */
+export async function readProjectSkillFile(
+  appPath: string,
+  skillMdPath: string,
+): Promise<ProjectSkillFileRead> {
+  const realAppPath = await fs.promises.realpath(appPath);
+  return readProjectSkillFileFromResolvedApp(
+    realAppPath,
+    skillMdPath,
+    MAX_SKILL_FILE_BYTES,
+  );
+}
+
 function stripQuotes(value: string): string {
   if (
     value.length >= 2 &&
@@ -183,7 +302,7 @@ export async function discoverProjectSkills(
   } catch {
     return [];
   }
-  if (!realSkillsRoot.startsWith(realAppPath + path.sep)) {
+  if (!isPathInside(realAppPath, realSkillsRoot)) {
     logger.warn(
       `Skill scan rejected ${skillsRoot}: resolves outside the app directory.`,
     );
@@ -205,8 +324,9 @@ export async function discoverProjectSkills(
   const queue: Array<{ dir: string; depth: number }> = [
     { dir: skillsRoot, depth: 0 },
   ];
+  let discoveryBytesRead = 0;
 
-  while (queue.length > 0) {
+  scan: while (queue.length > 0) {
     const { dir, depth } = queue.shift()!;
     if (visited.size >= MAX_SKILL_DIRECTORIES) {
       logger.warn(
@@ -238,11 +358,24 @@ export async function discoverProjectSkills(
       if (entry.name !== SKILL_MD_NAME || !entry.isFile()) {
         continue;
       }
-      const skill = await loadSkill(path.join(dir, entry.name));
+      const remainingBytes = MAX_DISCOVERY_READ_BYTES - discoveryBytesRead;
+      if (remainingBytes <= 0) {
+        logger.warn(
+          `Skill scan reached its ${MAX_DISCOVERY_READ_BYTES}-byte frontmatter budget; truncating.`,
+        );
+        break scan;
+      }
+      const loaded = await loadSkill(
+        path.join(dir, entry.name),
+        realAppPath,
+        Math.min(MAX_FRONTMATTER_SCAN_BYTES, remainingBytes),
+      );
+      discoveryBytesRead += loaded.bytesRead;
+      const skill = loaded.skill;
       if (!skill) continue;
       if (byName.has(skill.name)) {
         logger.warn(
-          `Duplicate skill "${skill.name}" shadowed by ${byName.get(skill.name)!.location}; keeping first.`,
+          `Duplicate skill "${formatSkillNameForLog(skill.name)}" shadowed by ${byName.get(skill.name)!.location}; keeping first.`,
         );
         continue;
       }
@@ -253,53 +386,55 @@ export async function discoverProjectSkills(
   return [...byName.values()];
 }
 
-async function loadSkill(skillMdPath: string): Promise<SkillInfo | null> {
-  let stat: fs.Stats;
-  try {
-    stat = await fs.promises.stat(skillMdPath);
-  } catch (error) {
-    logger.warn(`Failed to stat skill ${skillMdPath}: ${error}`);
-    return null;
-  }
-  if (stat.size > MAX_SKILL_FILE_BYTES) {
-    logger.warn(
-      `Skipping skill ${skillMdPath}: file is ${stat.size} bytes, exceeding ${MAX_SKILL_FILE_BYTES}.`,
-    );
-    return null;
-  }
+interface LoadedSkill {
+  skill: SkillInfo | null;
+  bytesRead: number;
+}
 
-  let content: string;
+async function loadSkill(
+  skillMdPath: string,
+  realAppPath: string,
+  maxReadBytes: number,
+): Promise<LoadedSkill> {
+  let read: ProjectSkillFileRead;
   try {
-    content = await fs.promises.readFile(skillMdPath, "utf8");
+    read = await readProjectSkillFileFromResolvedApp(
+      realAppPath,
+      skillMdPath,
+      maxReadBytes,
+    );
   } catch (error) {
     logger.warn(`Failed to read skill ${skillMdPath}: ${error}`);
-    return null;
+    return { skill: null, bytesRead: 0 };
   }
 
-  const parsed = parseSkillFrontmatter(content);
+  const parsed = parseSkillFrontmatter(read.content);
   const name = parsed?.fields.name;
   const description = parsed?.fields.description;
 
   if (!name) {
     logger.warn(`Skipping skill ${skillMdPath}: missing frontmatter name.`);
-    return null;
+    return { skill: null, bytesRead: read.bytesRead };
   }
   if (!description) {
     logger.warn(
       `Skipping skill ${skillMdPath}: missing frontmatter description.`,
     );
-    return null;
+    return { skill: null, bytesRead: read.bytesRead };
   }
   if (!isValidSkillName(name)) {
     logger.warn(
-      `Skill "${name}" (${skillMdPath}) violates Agent Skills name rules; loading anyway.`,
+      `Skill "${formatSkillNameForLog(name)}" (${skillMdPath}) violates Agent Skills name rules; loading anyway.`,
     );
   }
 
   return {
-    name,
-    description: truncateUtf8(description, MAX_SKILL_DESCRIPTION_BYTES),
-    location: skillMdPath,
-    directory: path.dirname(skillMdPath),
+    skill: {
+      name,
+      description: truncateUtf8(description, MAX_SKILL_DESCRIPTION_BYTES),
+      location: skillMdPath,
+      directory: path.dirname(skillMdPath),
+    },
+    bytesRead: read.bytesRead,
   };
 }

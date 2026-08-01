@@ -17,12 +17,30 @@ directory.`;
 
 /**
  * Cap on skills listed in the injected catalog. Discovery itself stays
- * bounded by `MAX_SKILL_DIRECTORIES` (scan cost); this separate cap protects
- * the system prompt from ballooning when an app ships hundreds of skills
- * (~100 tokens per entry). Skills beyond the cap stay discoverable and
- * loadable via `read_skill`, but the model cannot know their names.
+ * bounded by its directory and byte budgets; this count cap works with the
+ * total-byte cap below to protect the system prompt from ballooning. Skills
+ * beyond the caps stay discoverable and loadable via `read_skill`, but the
+ * model cannot know their names.
  */
 export const MAX_CATALOG_SKILLS = 100;
+/** Total UTF-8 budget for the complete injected skills block. */
+export const MAX_CATALOG_BYTES = 64 * 1024;
+
+function serializeSkill(skill: SkillInfo): string {
+  return (
+    `    <skill>\n` +
+    `      <name>${escapeXmlAttr(skill.name)}</name>\n` +
+    `      <description>${escapeXmlAttr(skill.description)}</description>\n` +
+    `      <location>${escapeXmlAttr(skill.location)}</location>\n` +
+    `    </skill>`
+  );
+}
+
+function truncationComment(omitted: number): string {
+  return omitted > 0
+    ? `\n    <!-- ${omitted} more skills available but omitted from the catalog -->`
+    : "";
+}
 
 /**
  * Build the disclosure section, or null when no skills are available (callers
@@ -35,26 +53,28 @@ export function buildSkillsCatalogBlock(
     return null;
   }
 
-  const shown = skills.slice(0, MAX_CATALOG_SKILLS);
-  const omitted = skills.length - shown.length;
+  const prefix = `${SKILLS_INSTRUCTIONS_BLOCK}\n\n<available_skills>\n`;
+  const suffix = "\n</available_skills>";
+  let catalog = "";
+  let shownCount = 0;
 
-  const catalog = shown
-    .map(
-      (skill) =>
-        `    <skill>\n` +
-        `      <name>${escapeXmlAttr(skill.name)}</name>\n` +
-        `      <description>${escapeXmlAttr(skill.description)}</description>\n` +
-        `      <location>${escapeXmlAttr(skill.location)}</location>\n` +
-        `    </skill>`,
-    )
-    .join("\n");
-  const truncation =
-    omitted > 0
-      ? `\n    <!-- ${omitted} more skills available but omitted from the catalog -->`
-      : "";
+  for (const skill of skills.slice(0, MAX_CATALOG_SKILLS)) {
+    const entry = serializeSkill(skill);
+    const nextCatalog = catalog ? `${catalog}\n${entry}` : entry;
+    const nextShownCount = shownCount + 1;
+    const candidate =
+      prefix +
+      nextCatalog +
+      truncationComment(skills.length - nextShownCount) +
+      suffix;
+    if (Buffer.byteLength(candidate, "utf8") > MAX_CATALOG_BYTES) {
+      break;
+    }
+    catalog = nextCatalog;
+    shownCount = nextShownCount;
+  }
 
   return (
-    `${SKILLS_INSTRUCTIONS_BLOCK}\n\n` +
-    `<available_skills>\n${catalog}${truncation}\n</available_skills>`
+    prefix + catalog + truncationComment(skills.length - shownCount) + suffix
   );
 }

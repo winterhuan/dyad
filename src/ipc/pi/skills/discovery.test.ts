@@ -8,6 +8,7 @@ import {
   discoverProjectSkills,
   isValidSkillName,
   parseSkillFrontmatter,
+  truncateUtf8,
 } from "./discovery";
 
 let tempRoot: string;
@@ -26,6 +27,14 @@ function writeSkill(dir: string, content: string): string {
   const location = path.join(skillDir, "SKILL.md");
   fs.writeFileSync(location, content);
   return location;
+}
+
+function symlinkDirectory(target: string, linkPath: string): void {
+  fs.symlinkSync(
+    process.platform === "win32" ? path.resolve(target) : target,
+    linkPath,
+    process.platform === "win32" ? "junction" : "dir",
+  );
 }
 
 function skillContent(name: string): string {
@@ -111,6 +120,28 @@ Body`);
       parseSkillFrontmatter(`---\nname: my-skill\n${huge}---\nBody`),
     ).toBeNull();
   });
+
+  it("measures the frontmatter cap in UTF-8 bytes", () => {
+    const multibyteDescription = "界".repeat(6 * 1024);
+    expect(
+      parseSkillFrontmatter(
+        `---\nname: my-skill\ndescription: ${multibyteDescription}\n---\nBody`,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("truncateUtf8", () => {
+  it("does not split a surrogate pair", () => {
+    expect(truncateUtf8("😀x", 3)).toBe("");
+    expect(truncateUtf8("😀x", 4)).toBe("😀");
+    expect(truncateUtf8("😀x", 5)).toBe("😀x");
+  });
+
+  it("handles a large ASCII prefix in one pass", () => {
+    const result = truncateUtf8("a".repeat(70 * 1024), 64 * 1024);
+    expect(result).toHaveLength(64 * 1024);
+  });
 });
 
 describe("isValidSkillName", () => {
@@ -142,7 +173,9 @@ describe("discoverProjectSkills", () => {
       "code-review",
       "pdf-processing",
     ]);
-    expect(skills[0]?.directory).toContain(".agents/skills/");
+    expect(skills[0]?.directory).toContain(
+      path.join(".agents", "skills") + path.sep,
+    );
   });
 
   it("returns an empty catalog when there is no skills directory", async () => {
@@ -236,7 +269,7 @@ Body`,
         force: true,
       });
       fs.mkdirSync(path.join(tempRoot, ".agents"));
-      fs.symlinkSync(
+      symlinkDirectory(
         path.join(externalDir, "skills"),
         path.join(tempRoot, ".agents", "skills"),
       );
@@ -264,7 +297,7 @@ Body`,
         recursive: true,
         force: true,
       });
-      fs.symlinkSync(
+      symlinkDirectory(
         path.join(externalDir, "agents"),
         path.join(tempRoot, ".agents"),
       );
@@ -305,19 +338,17 @@ Body`,
     const skillsRoot = path.join(tempRoot, ".agents", "skills");
     fs.mkdirSync(skillsRoot, { recursive: true });
     for (let index = 0; index < 2001; index++) {
-      const dir = path.join(skillsRoot, `cap-dir-${index}`);
-      fs.mkdirSync(dir);
-      fs.writeFileSync(
-        path.join(dir, "SKILL.md"),
-        skillContent(`cap-skill-${index}`),
+      fs.mkdirSync(
+        path.join(skillsRoot, `cap-dir-${String(index).padStart(4, "0")}`),
       );
     }
+    fs.writeFileSync(
+      path.join(skillsRoot, "cap-dir-2000", "SKILL.md"),
+      skillContent("beyond-cap"),
+    );
 
     const skills = await discoverProjectSkills(tempRoot);
 
-    // The cap stops the scan at 2000 visited directories (including the
-    // skills root), so not all 2001 skills can be discovered.
-    expect(skills.length).toBeLessThan(2001);
-    expect(skills.length).toBeGreaterThan(1500);
-  });
+    expect(skills).toEqual([]);
+  }, 30_000);
 });

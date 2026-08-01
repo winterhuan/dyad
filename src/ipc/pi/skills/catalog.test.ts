@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 
-import { buildSkillsCatalogBlock } from "./catalog";
+import { buildSkillsCatalogBlock, MAX_CATALOG_BYTES } from "./catalog";
 import type { SkillInfo } from "./discovery";
 
 function skill(overrides: Partial<SkillInfo>): SkillInfo {
@@ -76,5 +76,18 @@ describe("buildSkillsCatalogBlock", () => {
       ),
     )!;
     expect(block).not.toContain("more skills available but omitted");
+  });
+
+  it("caps the complete catalog by UTF-8 bytes", () => {
+    const block = buildSkillsCatalogBlock(
+      Array.from({ length: 100 }, (_, index) =>
+        skill({ name: `${index}-${"x".repeat(16 * 1024)}` }),
+      ),
+    )!;
+
+    expect(Buffer.byteLength(block, "utf8")).toBeLessThanOrEqual(
+      MAX_CATALOG_BYTES,
+    );
+    expect(block).toContain("more skills available but omitted");
   });
 });

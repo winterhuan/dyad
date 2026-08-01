@@ -78,6 +78,8 @@ describe("token counting excludes skills for security review (integration)", () 
     const baseNormal = (await count(prompt)).estimatedTotalTokens as number;
     const baseReview = (await count("/security-review " + prompt))
       .estimatedTotalTokens as number;
+    const summaryPrompt = "Summarize from chat-id=123";
+    const baseSummary = (await count(summaryPrompt)).estimatedTotalTokens;
 
     const skillDir = path.join(
       harness.appDir,
@@ -102,11 +104,15 @@ description: Extract text and tables from PDF files.
         .estimatedTotalTokens as number;
       const withSkillReview = (await count("/security-review " + prompt))
         .estimatedTotalTokens as number;
+      const withSkillSummary = (await count(summaryPrompt))
+        .estimatedTotalTokens;
 
       // The catalog is included for normal turns...
       expect(withSkillNormal).toBeGreaterThan(baseNormal);
       // ...but excluded for security review, matching the real prompt path.
       expect(withSkillReview).toBe(baseReview);
+      // Summary turns replace the assembled system prompt as well.
+      expect(withSkillSummary).toBe(baseSummary);
     } finally {
       await fs.promises.rm(path.join(harness.appDir, ".agents"), {
         recursive: true,

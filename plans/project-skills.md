@@ -25,6 +25,8 @@ the existing built-in `read_guide` mechanism, and are gated by a new
 - Bound per-file cost: skip `SKILL.md` files larger than 512 KiB, reject
   frontmatter blocks longer than 16 KiB, and truncate descriptions to 2 KiB
   (UTF-8) at discovery time so the catalog and tool outputs cannot balloon.
+  Discovery reads only the frontmatter prefix and stops after an 8 MiB
+  aggregate read budget rather than reading every skill body.
 - Parse the YAML frontmatter between the leading `---` delimiters with a small
   lenient hand-rolled parser (no new `yaml` dependency): `name` and
   `description` are required; tolerate unquoted values containing colons,
@@ -78,9 +80,10 @@ read_skill({
   separate flag — exactly 200 entries must not read as truncation.
 - Bound the returned body to 64 KiB (UTF-8, character-safe truncation) with an
   explicit truncation comment, so a single oversized skill cannot bloat the
-  context. When the body is empty, return it empty: the frontmatter must not
-  be resurrected (fall back to the raw file only when there is no frontmatter
-  block at all).
+  context. Re-open through a bounded file handle and revalidate file identity,
+  size, and resolved project containment at invocation time. When the body is
+  empty, return it empty: the frontmatter must not be resurrected (fall back
+  to the raw file only when there is no frontmatter block at all).
 - Set `modifiesState: false`, `defaultConsent: "always"` (matching
   `read_guide`), `getConsentPreview` returning `Read skill: <name>`, and
   `buildXml` emitting `<dyad-read-skill name="..."></dyad-read-skill>`.
@@ -115,21 +118,23 @@ read_skill({
 - Escape all injected metadata (`escapeXmlAttr`) since skill files are
   user-controlled. Omit the section entirely when the catalog is empty.
 - Cap the injected catalog at `MAX_CATALOG_SKILLS` (100) entries with an
-  omitted-count comment: discovery's directory cap bounds scan cost, but the
-  catalog cap separately protects prompt size (~100 tokens/skill), and a few
-  hundred skills would otherwise balloon the system prompt. Skills beyond the
-  cap remain loadable via `read_skill` (though the model cannot know their
-  names).
+  omitted-count comment and cap the complete block at 64 KiB: discovery's
+  directory and aggregate-byte caps bound scan cost, while the catalog caps
+  protect prompt size even when leniently loaded metadata is abnormally long.
+  Skills beyond the caps remain loadable via `read_skill` (though the model
+  cannot know their names).
 - Do NOT inject the catalog in the security-review branch
   (`isSecurityReviewIntent` in `chat_stream_handlers.ts`), which bypasses
-  `constructSystemPrompt` and must keep a minimal, project-content-free
+  `constructSystemPrompt` and must keep project skills out of its specialized
   prompt.
 - Keep `token_count_handlers.ts` in sync so token estimation includes the
   catalog at the same point (both sites call the same discovery module, so
   they always agree), including the security-review exclusion: the token
   count must skip the catalog when `input` starts with `/security-review`,
   mirroring `isSecurityReviewIntent`, or apps with many skills would
-  spuriously trigger the context-limit banner.
+  spuriously trigger the context-limit banner. Summary turns also replace the
+  assembled system prompt, so both paths skip discovery and catalog counting
+  when input starts with `Summarize from chat-id=`.
 
 ## Setting
 
@@ -161,7 +166,7 @@ read_skill({
 
 - `read_skill` lives at `src/ipc/pi/tools/dyad/read_skill.ts` (with the other
   Dyad tools), not under `src/ipc/pi/skills/`; it imports discovery helpers
-  from `../skills/discovery`.
+  from `../../skills/discovery`.
 
 ### Wiring
 

@@ -1292,6 +1292,7 @@ You may update the plan at \`${planPath}\` to mark your progress.`;
       const rebuildAppToolAvailable =
         settings.agentToolConsents?.rebuild_app !== "never";
       const isSecurityReviewIntent = req.prompt.startsWith("/security-review");
+      const isSummaryIntent = req.prompt.startsWith("Summarize from chat-id=");
       let piSystemPrompt: string;
       if (isSecurityReviewIntent) {
         const { formattedOutput } = await extractCodebase({
@@ -1348,9 +1349,13 @@ You may update the plan at \`${planPath}\` to mark your progress.`;
           }));
       }
 
-      // Project skills are user-controlled content; the security-review
-      // branch keeps a minimal prompt and must not receive them.
-      if (!isSecurityReviewIntent && settings.enableProjectSkills !== false) {
+      // Security-review and summary turns use specialized prompts and must not
+      // receive the project skills catalog.
+      if (
+        !isSecurityReviewIntent &&
+        !isSummaryIntent &&
+        settings.enableProjectSkills !== false
+      ) {
         const skillsBlock = buildSkillsCatalogBlock(
           await discoverProjectSkills(piAppPath),
         );
@@ -1360,7 +1365,7 @@ You may update the plan at \`${planPath}\` to mark your progress.`;
       }
 
       let piPrompt = effectiveAiUserPrompt;
-      if (req.prompt.startsWith("Summarize from chat-id=")) {
+      if (isSummaryIntent) {
         const previousChat = await db.query.chats.findFirst({
           where: eq(chats.id, Number(req.prompt.split("=")[1])),
           with: {

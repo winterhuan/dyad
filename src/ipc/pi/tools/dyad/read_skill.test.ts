@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DyadErrorKind } from "@/errors/dyad_error";
 import { readSkillTool } from "./read_skill";
@@ -22,6 +22,14 @@ function writeSkill(dir: string, content: string): void {
   const skillDir = path.join(tempRoot, ".agents", "skills", dir);
   fs.mkdirSync(skillDir, { recursive: true });
   fs.writeFileSync(path.join(skillDir, "SKILL.md"), content);
+}
+
+function symlinkDirectory(target: string, linkPath: string): void {
+  fs.symlinkSync(
+    process.platform === "win32" ? path.resolve(target) : target,
+    linkPath,
+    process.platform === "win32" ? "junction" : "dir",
+  );
 }
 
 const SKILL = `---
@@ -86,6 +94,30 @@ describe("readSkillTool", () => {
         makeAgentContext({ appPath: tempRoot }),
       ),
     ).rejects.toMatchObject({ kind: DyadErrorKind.NotFound });
+  });
+
+  it("bounds the available-skills error", async () => {
+    for (let index = 0; index < 25; index++) {
+      const name = `${index}-${"x".repeat(1024)}`;
+      writeSkill(
+        `skill-${index}`,
+        `---\nname: ${name}\ndescription: A skill\n---\nBody`,
+      );
+    }
+
+    try {
+      await readSkillTool.execute(
+        { skill: "missing" },
+        makeAgentContext({ appPath: tempRoot }),
+      );
+      throw new Error("Expected read_skill to fail");
+    } catch (error) {
+      expect(error).toMatchObject({ kind: DyadErrorKind.NotFound });
+      expect(Buffer.byteLength((error as Error).message, "utf8")).toBeLessThan(
+        8 * 1024,
+      );
+      expect((error as Error).message).toContain("(5 more)");
+    }
   });
 
   it("throws NotFound when the skill is deleted between discovery and invocation", async () => {
@@ -177,6 +209,73 @@ ${"A".repeat(70 * 1024)}`,
     expect(body.length).toBeLessThan(70 * 1024);
   });
 
+  it("rejects a skill that grows beyond the limit after discovery", async () => {
+    writeSkill("pdf-processing", SKILL);
+    const skillPath = path.join(
+      tempRoot,
+      ".agents",
+      "skills",
+      "pdf-processing",
+      "SKILL.md",
+    );
+    const originalOpen = fs.promises.open.bind(fs.promises);
+    let skillOpenCount = 0;
+    const openSpy = vi
+      .spyOn(fs.promises, "open")
+      .mockImplementation(async (file, flags, mode) => {
+        if (String(file) === skillPath && ++skillOpenCount === 2) {
+          fs.writeFileSync(skillPath, "x".repeat(600 * 1024));
+        }
+        return originalOpen(file, flags, mode);
+      });
+
+    try {
+      await expect(
+        readSkillTool.execute(
+          { skill: "pdf-processing" },
+          makeAgentContext({ appPath: tempRoot }),
+        ),
+      ).rejects.toMatchObject({ kind: DyadErrorKind.NotFound });
+      expect(skillOpenCount).toBe(2);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("rejects a skill directory swapped to an external symlink after discovery", async () => {
+    writeSkill("pdf-processing", SKILL);
+    const skillDir = path.join(tempRoot, ".agents", "skills", "pdf-processing");
+    const skillPath = path.join(skillDir, "SKILL.md");
+    const externalDir = await fs.promises.mkdtemp(
+      path.join(os.tmpdir(), "dyad-skill-swap-"),
+    );
+    fs.writeFileSync(path.join(externalDir, "SKILL.md"), SKILL);
+    const originalOpen = fs.promises.open.bind(fs.promises);
+    let skillOpenCount = 0;
+    const openSpy = vi
+      .spyOn(fs.promises, "open")
+      .mockImplementation(async (file, flags, mode) => {
+        if (String(file) === skillPath && ++skillOpenCount === 2) {
+          fs.rmSync(skillDir, { recursive: true, force: true });
+          symlinkDirectory(externalDir, skillDir);
+        }
+        return originalOpen(file, flags, mode);
+      });
+
+    try {
+      await expect(
+        readSkillTool.execute(
+          { skill: "pdf-processing" },
+          makeAgentContext({ appPath: tempRoot }),
+        ),
+      ).rejects.toMatchObject({ kind: DyadErrorKind.NotFound });
+      expect(skillOpenCount).toBe(2);
+    } finally {
+      openSpy.mockRestore();
+      await fs.promises.rm(externalDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a skills root that resolves outside the app via symlink", async () => {
     const externalDir = await fs.promises.mkdtemp(
       path.join(os.tmpdir(), "dyad-skill-ext-"),
@@ -197,7 +296,7 @@ Body from outside.
       );
       const agentsDir = path.join(tempRoot, ".agents");
       fs.mkdirSync(agentsDir, { recursive: true });
-      fs.symlinkSync(
+      symlinkDirectory(
         path.join(externalDir, "skills"),
         path.join(agentsDir, "skills"),
       );
