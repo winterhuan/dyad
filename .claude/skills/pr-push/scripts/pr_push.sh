@@ -1,23 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_REPO="${PR_PUSH_BASE_REPO:-dyad-sh/dyad}"
-BASE_BRANCH="${PR_PUSH_BASE_BRANCH:-main}"
-DEFAULT_REMOTE="${PR_PUSH_REMOTE:-origin}"
-REVIEW_LABEL="needs-human:review-issue"
+FORK_REMOTE="fork"
 CREATED_BRANCH=""
 IGNORED_FILES=()
 COMMITTED_FILES=()
 LINT_CHANGED="no"
-PUSH_REMOTE=""
-PUSH_OWNER_REPO=""
-PR_URL=""
-PR_NUMBER=""
-PR_CREATION_LINK=""
-SUGGESTED_TITLE=""
-SUGGESTED_BODY=""
 CREATED_COMMIT="no"
-PR_SKIPPED_REASON=""
+PUSH_REF=""
 
 log() {
   printf '==> %s\n' "$*"
@@ -299,52 +289,6 @@ amend_or_commit_check_changes() {
   fi
 }
 
-repo_temp_file() {
-  local name="$1"
-  mkdir -p .claude/tmp
-  mktemp ".claude/tmp/${name}.XXXXXX"
-}
-
-owner_repo_from_url() {
-  local url="$1"
-  local parsed
-
-  url="${url%.git}"
-  case "$url" in
-    *://*)
-      parsed="${url#*://}"
-      parsed="${parsed#*@}"
-      case "$parsed" in
-        github.com/* | github.com:*/* | ssh.github.com/* | ssh.github.com:*/*)
-          parsed="${parsed#*/}"
-          if [[ "$parsed" == */* ]]; then
-            printf '%s\n' "$parsed"
-            return
-          fi
-          ;;
-      esac
-      ;;
-    git@github.com:*) printf '%s\n' "${url#git@github.com:}" ;;
-    github.com:*) printf '%s\n' "${url#github.com:}" ;;
-    github.com/*) printf '%s\n' "${url#github.com/}" ;;
-    *) printf '%s\n' "$url" ;;
-  esac
-}
-
-remote_owner_repo() {
-  local remote="$1"
-  local url
-  url="$(git remote get-url --push "$remote" 2>/dev/null || git remote get-url "$remote")"
-  owner_repo_from_url "$url"
-}
-
-remote_fetch_owner_repo() {
-  local remote="$1"
-  local url
-  url="$(git remote get-url "$remote")"
-  owner_repo_from_url "$url"
-}
-
 is_permission_push_error() {
   grep -qiE 'permission|denied|403|not allowlisted|could not read Username' <<<"$1"
 }
@@ -376,338 +320,26 @@ git_push_with_token_retry() {
   return 1
 }
 
-has_remote() {
-  git remote get-url "$1" >/dev/null 2>&1
-}
-
-remote_for_owner_repo() {
-  local owner_repo="$1" remote
-  while IFS= read -r remote; do
-    if [[ "$(remote_owner_repo "$remote")" == "$owner_repo" ]]; then
-      printf '%s\n' "$remote"
-      return 0
-    fi
-  done < <(git remote)
-
-  return 1
-}
-
-remote_for_fetch_owner_repo() {
-  local owner_repo="$1" remote
-  while IFS= read -r remote; do
-    if [[ "$(remote_fetch_owner_repo "$remote")" == "$owner_repo" ]]; then
-      printf '%s\n' "$remote"
-      return 0
-    fi
-  done < <(git remote)
-
-  return 1
-}
-
-remote_has_split_push_repo() {
-  local remote="$1" fetch_owner_repo push_owner_repo
-  fetch_owner_repo="$(remote_fetch_owner_repo "$remote")"
-  push_owner_repo="$(remote_owner_repo "$remote")"
-  [[ -n "$fetch_owner_repo" && -n "$push_owner_repo" && "$fetch_owner_repo" != "$push_owner_repo" ]]
-}
-
-push_branch_to_remote() {
-  local output_var="$1" remote="$2" set_upstream="$3" refspec="${4:-}"
-  local args
-
-  if remote_has_split_push_repo "$remote"; then
-    log "Remote $remote has separate fetch and push repositories; using --force because --force-with-lease checks the fetch-side tracking ref"
-    args=(git push --force)
-  else
-    args=(git push --force-with-lease)
-  fi
-
-  if [[ "$set_upstream" == "yes" ]]; then
-    args+=(-u)
-  fi
-
-  args+=("$remote")
-  if [[ -n "$refspec" ]]; then
-    args+=("$refspec")
-  else
-    args+=(HEAD)
-  fi
-
-  git_push_with_token_retry "$output_var" "${args[@]}"
-}
-
-list_existing_prs_for_branch() {
-  local branch="$1" list_output error_file
-  error_file="$(repo_temp_file pr-push-list-error)"
-
-  if ! list_output="$(gh pr list --repo "$BASE_REPO" --head "$branch" --json number,url,headRepository,headRepositoryOwner --jq '.[] | [.number, .url, (((.headRepositoryOwner.login // "") + "/" + (.headRepository.name // "")) | select(. != "/"))] | @tsv' 2>"$error_file")"; then
-    cat "$error_file" >&2
-    rm -f "$error_file"
-    printf '%s\n' "$list_output" >&2
-    die "Unable to list existing PRs"
-  fi
-
-  rm -f "$error_file"
-  printf '%s\n' "$list_output"
-}
-
-find_existing_pr_for_branch() {
-  local branch="$1" head_owner="${2:-}"
-  local list_output number url head_repo
-
-  list_output="$(list_existing_prs_for_branch "$branch")"
-  [[ -n "$list_output" ]] || return 1
-
-  while IFS=$'\t' read -r number url head_repo; do
-    [[ -n "$number" ]] || continue
-    if [[ -n "$head_owner" && "$head_repo" != "$head_owner/"* ]]; then
-      continue
-    fi
-
-    PR_NUMBER="$number"
-    PR_URL="$url"
-    return 0
-  done <<<"$list_output"
-
-  return 1
-}
-
-find_existing_pr_head_repo_for_local_remote() {
-  local branch="$1"
-  local list_output number url head_repo
-
-  list_output="$(list_existing_prs_for_branch "$branch")"
-  [[ -n "$list_output" ]] || return 1
-
-  while IFS=$'\t' read -r number url head_repo; do
-    [[ -n "$number" && -n "$head_repo" ]] || continue
-    if remote_for_owner_repo "$head_repo" >/dev/null; then
-      PR_NUMBER="$number"
-      PR_URL="$url"
-      printf '%s\n' "$head_repo"
-      return 0
-    fi
-  done <<<"$list_output"
-
-  return 1
-}
-
-push_with_fallback() {
-  local branch upstream upstream_branch push_output
+push_to_fork() {
+  local branch push_output
   branch="$(current_branch)"
 
-  if upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
-    PUSH_REMOTE="${upstream%%/*}"
-    upstream_branch="${upstream#*/}"
+  git remote get-url --push "$FORK_REMOTE" >/dev/null 2>&1 || die "Required remote '$FORK_REMOTE' is not configured"
 
-    if [[ "$upstream_branch" != "main" && "$upstream_branch" != "master" ]]; then
-      log "Pushing to tracked upstream $upstream"
-      if push_branch_to_remote push_output "$PUSH_REMOTE" "no" "HEAD:$upstream_branch"; then
-        printf '%s\n' "$push_output"
-        PUSH_OWNER_REPO="$(remote_owner_repo "$PUSH_REMOTE")"
-        return
-      fi
-
-      printf '%s\n' "$push_output" >&2
-      if is_permission_push_error "$push_output"; then
-        log "Tracked push failed with permission-like error; falling back to $DEFAULT_REMOTE"
-        PUSH_REMOTE="$DEFAULT_REMOTE"
-        if push_branch_to_remote push_output "$DEFAULT_REMOTE" "yes"; then
-          printf '%s\n' "$push_output"
-          PUSH_OWNER_REPO="$(remote_owner_repo "$PUSH_REMOTE")"
-          return
-        fi
-        printf '%s\n' "$push_output" >&2
-        die "Fallback push to $DEFAULT_REMOTE failed after tracked push to $upstream failed"
-      fi
-
-      die "Push to tracked upstream failed"
-    fi
-
-    log "Ignoring tracked upstream $upstream because it points at the base branch"
-    git branch --unset-upstream >/dev/null 2>&1 || true
-  fi
-
-  local pr_head_repo_name matched_remote
-  if pr_head_repo_name="$(find_existing_pr_head_repo_for_local_remote "$branch")"; then
-    while IFS= read -r remote; do
-      if [[ "$(remote_owner_repo "$remote")" == "$pr_head_repo_name" ]]; then
-        matched_remote="$remote"
-        break
-      fi
-    done < <(git remote)
-  fi
-
-  PUSH_REMOTE="${matched_remote:-$DEFAULT_REMOTE}"
-  log "Pushing to $PUSH_REMOTE"
-  if push_branch_to_remote push_output "$PUSH_REMOTE" "yes"; then
+  PUSH_REF="$FORK_REMOTE/$branch"
+  log "Pushing current branch only to $PUSH_REF"
+  if git_push_with_token_retry push_output git push --force-with-lease -u "$FORK_REMOTE" "HEAD:$branch"; then
     printf '%s\n' "$push_output"
-    PUSH_OWNER_REPO="$(remote_owner_repo "$PUSH_REMOTE")"
     return
   fi
 
   printf '%s\n' "$push_output" >&2
-  if [[ "$PUSH_REMOTE" != "upstream" ]] && has_remote "upstream" && is_permission_push_error "$push_output"; then
-    log "Push to $PUSH_REMOTE failed with permission-like error; trying upstream as fallback"
-    local failed_remote="$PUSH_REMOTE"
-    PUSH_REMOTE="upstream"
-    if push_branch_to_remote push_output upstream "yes" "HEAD:$branch"; then
-      printf '%s\n' "$push_output"
-      PUSH_OWNER_REPO="$(remote_owner_repo "$PUSH_REMOTE")"
-      return
-    fi
-    printf '%s\n' "$push_output" >&2
-    die "Fallback push to upstream failed after push to $failed_remote failed"
-  fi
-
-  die "Push failed"
-}
-
-active_account_is_bot() {
-  local account
-  account="$(gh api user --jq .login 2>/dev/null || true)"
-  [[ "$account" == *\[bot\] ]]
-}
-
-pr_title() {
-  if [[ -n "${PR_PUSH_PR_TITLE:-}" ]]; then
-    printf '%s\n' "$PR_PUSH_PR_TITLE"
-    return
-  fi
-
-  local subject
-  subject="$(git log -1 --pretty=%s)"
-  subject="$(printf '%s' "$subject" | sed -E 's/^[[:alpha:]]+(\([^)]*\))?!?:[[:space:]]+//')"
-
-  if [[ -z "$subject" ]]; then
-    printf 'Update project files\n'
-  else
-    printf '%s%s\n' "$(tr '[:lower:]' '[:upper:]' <<<"${subject:0:1}")" "${subject:1}"
-  fi
-}
-
-pr_body() {
-  if [[ -n "${PR_PUSH_PR_BODY:-}" ]]; then
-    printf '%s\n' "$PR_PUSH_PR_BODY"
-    return
-  fi
-
-  if [[ -n "${PR_PUSH_PR_BODY_FILE:-}" ]]; then
-    [[ -f "$PR_PUSH_PR_BODY_FILE" ]] || die "PR body file does not exist: $PR_PUSH_PR_BODY_FILE"
-    cat "$PR_PUSH_PR_BODY_FILE"
-    return
-  fi
-
-  die "PR body is required; set PR_PUSH_PR_BODY_FILE or PR_PUSH_PR_BODY after reviewing the complete branch diff"
-}
-
-validate_pr_body() {
-  local body="$1"
-
-  grep -qE '^## Summary[[:space:]]*$' <<<"$body" || die "PR body must contain a ## Summary section"
-  if grep -qE '^- Primary files:' <<<"$body"; then
-    die "PR body must explain the change instead of listing primary files"
-  fi
-}
-
-base_comparison_ref() {
-  local base_remote
-  if base_remote="$(remote_for_fetch_owner_repo "$BASE_REPO")"; then
-    if ! git show-ref --verify --quiet "refs/remotes/$base_remote/$BASE_BRANCH"; then
-      git fetch "$base_remote" "$BASE_BRANCH" >/dev/null 2>&1 || true
-    fi
-
-    if git show-ref --verify --quiet "refs/remotes/$base_remote/$BASE_BRANCH"; then
-      printf '%s/%s\n' "$base_remote" "$BASE_BRANCH"
-      return
-    fi
-  fi
-
-  printf '%s\n' "$BASE_BRANCH"
-}
-
-branch_has_commits_ahead() {
-  local base_ref count
-  base_ref="$(base_comparison_ref)"
-  if ! count="$(git rev-list --count "$base_ref"..HEAD 2>/dev/null)"; then
-    PR_SKIPPED_REASON="could not determine commit count against $base_ref"
-    return 1
-  fi
-
-  if [[ "$count" == "0" ]]; then
-    PR_SKIPPED_REASON="branch has no commits ahead of $base_ref"
-    return 1
-  fi
-
-  return 0
-}
-
-create_or_update_pr() {
-  local branch head_owner title body create_error create_error_file
-
-  branch="$(current_branch)"
-  [[ -n "$PUSH_OWNER_REPO" && "$PUSH_OWNER_REPO" != *://* && "$PUSH_OWNER_REPO" == */* ]] || die "Cannot determine owner/repo for push remote $PUSH_REMOTE"
-  head_owner="${PUSH_OWNER_REPO%%/*}"
-  if find_existing_pr_for_branch "$branch" "$head_owner"; then
-    log "PR already exists: $PR_URL"
-  elif find_existing_pr_for_branch "$branch"; then
-    log "PR already exists for branch $branch with a different head owner: $PR_URL"
-  else
-    if ! branch_has_commits_ahead; then
-      log "Skipping PR creation because $PR_SKIPPED_REASON"
-      return
-    fi
-
-    title="$(pr_title)"
-    body="$(pr_body)"
-    validate_pr_body "$body"
-    SUGGESTED_TITLE="$title"
-    SUGGESTED_BODY="$body"
-
-    if active_account_is_bot; then
-      PR_CREATION_LINK="https://github.com/${PUSH_OWNER_REPO}/pull/new/${branch}"
-      log "Active GitHub account is a bot; skipping PR creation"
-      return
-    fi
-
-    log "Creating PR against $BASE_REPO"
-    create_error_file="$(repo_temp_file pr-push-create-error)"
-    if ! PR_URL="$(gh pr create \
-      --repo "$BASE_REPO" \
-      --head "${head_owner}:${branch}" \
-      --base "$BASE_BRANCH" \
-      --title "$title" \
-      --body "$body" 2>"$create_error_file")"; then
-      create_error="$(cat "$create_error_file")"
-      rm -f "$create_error_file"
-      if grep -qi 'fork collab' <<<"$create_error"; then
-        log "Retrying PR creation without maintainer edits"
-        if ! PR_URL="$(gh pr create \
-          --repo "$BASE_REPO" \
-          --head "${head_owner}:${branch}" \
-          --base "$BASE_BRANCH" \
-          --title "$title" \
-          --body "$body" \
-          --no-maintainer-edit 2>&1)"; then
-          die "Unable to create PR (--no-maintainer-edit retry): $PR_URL"
-        fi
-      else
-        printf '%s\n' "$create_error" >&2
-        die "Unable to create PR"
-      fi
-    fi
-    rm -f "$create_error_file"
-    PR_NUMBER="${PR_URL##*/}"
-  fi
-
-  if [[ -n "$PR_NUMBER" ]]; then
-    gh pr edit "$PR_NUMBER" --repo "$BASE_REPO" --remove-label "$REVIEW_LABEL" >/dev/null 2>&1 || true
-  fi
+  die "Push to $FORK_REMOTE failed; no other remote was attempted"
 }
 
 print_summary() {
-  printf '\nPR push summary\n'
-  printf -- '---------------\n'
+  printf '\nFork push summary\n'
+  printf -- '-----------------\n'
   printf 'Branch: %s\n' "$(current_branch)"
   [[ -n "$CREATED_BRANCH" ]] && printf 'Created branch: %s\n' "$CREATED_BRANCH"
   printf 'Committed files:\n'
@@ -724,17 +356,9 @@ print_summary() {
   fi
   printf 'Automated check changes: %s\n' "$LINT_CHANGED"
   printf 'Checks: fmt, lint:fix, ts passed; unit tests not run by script\n'
-  printf 'Pushed remote: %s (%s)\n' "$PUSH_REMOTE" "$PUSH_OWNER_REPO"
-  if [[ -n "$PR_URL" ]]; then
-    printf 'PR: %s\n' "$PR_URL"
-  elif [[ -n "$PR_SKIPPED_REASON" ]]; then
-    printf 'PR creation skipped: %s\n' "$PR_SKIPPED_REASON"
-  elif [[ -n "$PR_CREATION_LINK" ]]; then
-    printf 'PR creation skipped for bot account.\n'
-    printf 'Create PR: %s\n' "$PR_CREATION_LINK"
-    printf 'Suggested title: %s\n' "$SUGGESTED_TITLE"
-    printf 'Suggested body:\n%s\n' "$SUGGESTED_BODY"
-  fi
+  printf 'Pushed remote: %s\n' "$FORK_REMOTE"
+  printf 'Pushed ref: %s\n' "$PUSH_REF"
+  printf 'Pull request operations: disabled\n'
 }
 
 main() {
@@ -743,8 +367,7 @@ main() {
   commit_if_needed
   run_checks
   amend_or_commit_check_changes
-  push_with_fallback
-  create_or_update_pr
+  push_to_fork
   print_summary
 }
 
