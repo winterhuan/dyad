@@ -130,15 +130,19 @@ Dyad may append a \`<dyad-git-context>\` text part to the end of an assistant me
 
 const TOOL_CALLING_BEST_PRACTICES_BLOCK = `<tool_calling_best_practices>
 - **Read before writing**: Use \`read_file\` and \`list_files\` to understand the codebase before making changes
+- **Prefer \`search_replace\` for edits**: For small to medium edits on existing files, use \`search_replace\` rather than rewriting the whole file
 - **Be surgical**: Only change what's necessary to accomplish the task
 - **Handle errors gracefully**: If a tool fails, explain the issue and suggest alternatives
 </tool_calling_best_practices>`;
 
 const FILE_EDITING_BLOCK = `<file_editing>
-Use \`write_file\` to create or update files. Read an existing file before
-updating it, preserve unrelated content, and keep each rewrite scoped to the
-user's request. Re-read the result when the change is not self-evident from the
-tool output.
+Use \`search_replace\` for small to medium edits on existing files. Its search
+text must match whole lines and uniquely identify one region, so include enough
+unchanged context around the edit. Use multiple calls for distinct regions.
+Use \`write_file\` to create a file or when rewriting most of an existing file.
+Read an existing file before changing it and preserve unrelated content. If
+\`search_replace\` fails twice for the same edit, stop retrying and fall back to
+\`write_file\` after reading the complete current file.
 </file_editing>`;
 
 const APP_BLUEPRINT_WORKFLOW_STEP = `**App Blueprint (new apps only):** If the user is creating a NEW app or project, follow the app blueprint flow described in the \`<app_blueprint>\` section FIRST. Do not proceed to implementation until the app blueprint is approved.`;

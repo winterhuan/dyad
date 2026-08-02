@@ -26,6 +26,8 @@ import { getOpenRouterAppAttributionHeaders } from "@/ipc/utils/openrouter_attri
 import { getEnvVar } from "@/ipc/utils/read_env";
 import { getPiModels } from "./model_runtime";
 import { materializeVertexServiceAccount } from "./vertex_credentials";
+import { runWithProviderProxy } from "./provider_proxy_fetch";
+import { getProviderProxyUrl } from "@/lib/providerProxy";
 
 /**
  * Map Dyad's coarse `thinkingBudget` setting onto a pi `ThinkingLevel`.
@@ -78,6 +80,12 @@ export async function buildStreamOptions(
   }
 
   const env = await buildProviderEnv(model, settings);
+  const proxyUrl = getProviderProxyUrl(settings, model.provider);
+  if (proxyUrl) {
+    env.HTTP_PROXY = proxyUrl;
+    env.HTTPS_PROXY = proxyUrl;
+    env.ALL_PROXY = proxyUrl;
+  }
   if (Object.keys(env).length > 0) {
     options.env = env;
   }
@@ -177,8 +185,13 @@ async function buildProviderEnv(
  * Create a `StreamFn` bound to the shared pi `Models` singleton, layering the
  * provided base options underneath whatever the agent loop passes per call.
  */
-export function createDyadStreamFn(baseOptions: SimpleStreamOptions): StreamFn {
+export function createDyadStreamFn(
+  baseOptions: SimpleStreamOptions,
+  proxyUrl?: string,
+): StreamFn {
   const models = getPiModels();
   return (model, context, options) =>
-    models.streamSimple(model, context, { ...baseOptions, ...options });
+    runWithProviderProxy(proxyUrl, () =>
+      models.streamSimple(model, context, { ...baseOptions, ...options }),
+    );
 }

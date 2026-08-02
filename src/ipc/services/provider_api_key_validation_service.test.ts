@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { net } from "electron";
 
 import { DyadErrorKind } from "@/errors/dyad_error";
 import {
@@ -7,10 +8,64 @@ import {
   validateProviderApiKey,
 } from "./provider_api_key_validation_service";
 
+const proxyFetch = vi.hoisted(() => ({
+  fetch: vi.fn(),
+}));
+
+vi.mock("@/ipc/pi/provider_proxy_fetch", () => ({
+  fetchWithProviderProxy: proxyFetch.fetch,
+}));
+
+vi.mock("electron", () => ({
+  net: {
+    fetch: vi.fn(),
+  },
+}));
+
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  vi.clearAllMocks();
+});
+
+describe("validateProviderApiKey transport", () => {
+  it("uses Electron's proxy-aware network stack by default", async () => {
+    const fetchFn = vi
+      .mocked(net.fetch)
+      .mockResolvedValue(new Response('{"models":[]}', { status: 200 }));
+
+    await validateProviderApiKey({
+      provider: "google",
+      apiKey: "google-test-key",
+    });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
+      expect.objectContaining({
+        method: "GET",
+        headers: { "x-goog-api-key": "google-test-key" },
+      }),
+    );
+  });
+
+  it("uses the provider proxy when one is configured", async () => {
+    proxyFetch.fetch.mockResolvedValue(
+      new Response('{"models":[]}', { status: 200 }),
+    );
+
+    await validateProviderApiKey(
+      { provider: "google", apiKey: "google-test-key" },
+      { proxyUrl: "http://127.0.0.1:10808" },
+    );
+
+    expect(proxyFetch.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:10808",
+      "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(net.fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("validateGoogleApiKey", () => {
@@ -35,15 +90,18 @@ describe("validateGoogleApiKey", () => {
   });
 
   it("classifies a rejected key as an authentication error", async () => {
-    globalThis.fetch = vi
+    const fetchFn = vi
       .fn()
       .mockResolvedValue(new Response("invalid API key", { status: 403 }));
 
     await expect(
-      validateProviderApiKey({
-        provider: "google",
-        apiKey: "google-invalid-key",
-      }),
+      validateProviderApiKey(
+        {
+          provider: "google",
+          apiKey: "google-invalid-key",
+        },
+        { fetchFn },
+      ),
     ).rejects.toMatchObject({
       kind: DyadErrorKind.Auth,
       message: expect.stringContaining("Google rejected this API key"),
@@ -56,23 +114,29 @@ describe("validateGoogleApiKey", () => {
         "getaddrinfo ENOTFOUND generativelanguage.googleapis.com",
       ),
     });
-    globalThis.fetch = vi.fn().mockRejectedValue(networkError);
+    const fetchFn = vi.fn().mockRejectedValue(networkError);
 
     await expect(
-      validateProviderApiKey({
-        provider: "google",
-        apiKey: "google-secret-placeholder",
-      }),
+      validateProviderApiKey(
+        {
+          provider: "google",
+          apiKey: "google-secret-placeholder",
+        },
+        { fetchFn },
+      ),
     ).rejects.toMatchObject({
       kind: DyadErrorKind.External,
       message: expect.stringContaining("getaddrinfo ENOTFOUND"),
     });
 
     try {
-      await validateProviderApiKey({
-        provider: "google",
-        apiKey: "google-secret-placeholder",
-      });
+      await validateProviderApiKey(
+        {
+          provider: "google",
+          apiKey: "google-secret-placeholder",
+        },
+        { fetchFn },
+      );
     } catch (error) {
       expect(String(error)).not.toContain("google-secret-placeholder");
     }
@@ -103,15 +167,18 @@ describe("validateOpenRouterApiKey", () => {
   });
 
   it("classifies a rejected key as an authentication error", async () => {
-    globalThis.fetch = vi
+    const fetchFn = vi
       .fn()
       .mockResolvedValue(new Response("invalid key", { status: 401 }));
 
     await expect(
-      validateProviderApiKey({
-        provider: "openrouter",
-        apiKey: "sk-or-invalid",
-      }),
+      validateProviderApiKey(
+        {
+          provider: "openrouter",
+          apiKey: "sk-or-invalid",
+        },
+        { fetchFn },
+      ),
     ).rejects.toMatchObject({
       kind: DyadErrorKind.Auth,
       message: expect.stringContaining("OpenRouter rejected this API key"),

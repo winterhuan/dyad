@@ -14,6 +14,7 @@ import type { Message } from "@earendil-works/pi-ai";
 import type { ChatMode, LargeLanguageModel, UserSettings } from "@/lib/schemas";
 import { resolveDyadModel } from "./model_runtime";
 import { buildStreamOptions, createDyadStreamFn } from "./stream_fn";
+import { getProviderProxyUrl } from "@/lib/providerProxy";
 
 export interface CreateDyadAgentParams {
   model: LargeLanguageModel;
@@ -64,9 +65,12 @@ export async function createDyadAgent(
     dyadRequestId,
   } = params;
 
-  const piModel = await resolveDyadModel(model);
+  const piModel = await resolveDyadModel(model, { settings });
   const baseOptions = await buildStreamOptions(model, settings, dyadRequestId);
-  const streamFn = createDyadStreamFn(baseOptions);
+  const streamFn = createDyadStreamFn(
+    baseOptions,
+    getProviderProxyUrl(settings, model.provider),
+  );
 
   return new Agent({
     streamFn,

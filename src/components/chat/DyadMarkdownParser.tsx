@@ -15,6 +15,7 @@ import { DyadReadChat } from "./DyadReadChat";
 import { DyadAddIntegration } from "./DyadAddIntegration";
 import { DyadEnableNitro } from "./DyadEnableNitro";
 import { DyadEdit } from "./DyadEdit";
+import { DyadSearchReplace } from "./DyadSearchReplace";
 import { DyadCodebaseContext } from "./DyadCodebaseContext";
 import { DyadThink } from "./DyadThink";
 import { CodeHighlight } from "./CodeHighlight";
@@ -636,6 +637,21 @@ function renderCustomTag(
         >
           {content}
         </DyadEdit>
+      );
+
+    case "dyad-search-replace":
+      return (
+        <DyadSearchReplace
+          node={{
+            properties: {
+              path: attributes.path || "",
+              description: attributes.description || "",
+              state: getState({ isStreaming, inProgress }),
+            },
+          }}
+        >
+          {content}
+        </DyadSearchReplace>
       );
 
     case "dyad-codebase-context":

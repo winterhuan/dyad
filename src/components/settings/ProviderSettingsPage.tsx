@@ -40,6 +40,8 @@ import { getDefaultModelForProvider } from "@/lib/providerDefaultModel";
 import { ProviderSettingsHeader } from "./ProviderSettingsHeader";
 import { ApiKeyConfiguration } from "./ApiKeyConfiguration";
 import { ModelsSection } from "./ModelsSection";
+import { ProviderProxyConfiguration } from "./ProviderProxyConfiguration";
+import { OpenAIBaseUrlConfiguration } from "./OpenAIBaseUrlConfiguration";
 
 interface ProviderSettingsPageProps {
   provider: string;
@@ -501,28 +503,45 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
               </AlertDescription>
             </Alert>
           ) : (
-            <ApiKeyConfiguration
-              provider={provider}
-              providerDisplayName={providerDisplayName}
-              settings={settings}
-              envVars={envVars}
-              envVarName={envVarName}
-              isSaving={isSaving}
-              isTesting={isTesting}
-              saveError={saveError}
-              testSuccessMessage={testSuccessMessage}
-              apiKeyInput={apiKeyInput}
-              onApiKeyInputChange={(value) => {
-                setHighlightPasteButton(false);
-                setApiKeyInput(value);
-              }}
-              onSaveKey={handleSaveKey}
-              onTestKey={shouldValidateApiKey ? handleTestKey : undefined}
-              onDeleteKey={handleDeleteKey}
-              updateSettings={updateSettings}
-              highlightPasteButton={highlightPasteButton}
-              onDismissPasteHighlight={() => setHighlightPasteButton(false)}
-            />
+            <>
+              {provider === "openai" && (
+                <OpenAIBaseUrlConfiguration
+                  settings={settings}
+                  updateSettings={updateSettings}
+                />
+              )}
+              {provider !== "ollama" &&
+                provider !== "lmstudio" &&
+                provider !== "auto" && (
+                  <ProviderProxyConfiguration
+                    provider={provider}
+                    settings={settings}
+                    updateSettings={updateSettings}
+                  />
+                )}
+              <ApiKeyConfiguration
+                provider={provider}
+                providerDisplayName={providerDisplayName}
+                settings={settings}
+                envVars={envVars}
+                envVarName={envVarName}
+                isSaving={isSaving}
+                isTesting={isTesting}
+                saveError={saveError}
+                testSuccessMessage={testSuccessMessage}
+                apiKeyInput={apiKeyInput}
+                onApiKeyInputChange={(value) => {
+                  setHighlightPasteButton(false);
+                  setApiKeyInput(value);
+                }}
+                onSaveKey={handleSaveKey}
+                onTestKey={shouldValidateApiKey ? handleTestKey : undefined}
+                onDeleteKey={handleDeleteKey}
+                updateSettings={updateSettings}
+                highlightPasteButton={highlightPasteButton}
+                onDismissPasteHighlight={() => setHighlightPasteButton(false)}
+              />
+            </>
           )}
 
           {/* Conditionally render CustomModelsSection */}

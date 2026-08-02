@@ -30,6 +30,8 @@ describe("agent tool consent defaults", () => {
 
     expect(getAgentToolConsent("write_file")).toBe("always");
     expect(getAllAgentToolConsents().write_file).toBe("always");
+    expect(getAgentToolConsent("search_replace")).toBe("always");
+    expect(getAllAgentToolConsents().search_replace).toBe("always");
   });
 
   it("keeps an explicit per-tool consent when auto-approve is enabled", () => {

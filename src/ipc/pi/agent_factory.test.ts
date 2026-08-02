@@ -61,11 +61,17 @@ describe("createDyadAgent", () => {
       dyadRequestId: "request-42",
     });
 
-    expect(runtime.resolveDyadModel).toHaveBeenCalledWith(model);
+    expect(runtime.resolveDyadModel).toHaveBeenCalledWith(model, {
+      settings: expect.anything(),
+    });
     expect(runtime.buildStreamOptions).toHaveBeenCalledWith(
       model,
       expect.anything(),
       "request-42",
+    );
+    expect(runtime.createDyadStreamFn).toHaveBeenCalledWith(
+      { reasoning: "high" },
+      undefined,
     );
     expect(agent.state.systemPrompt).toBe("you are a coding agent");
     expect(agent.state.model).toEqual({ id: "gpt-5.2" });
@@ -89,5 +95,25 @@ describe("createDyadAgent", () => {
     expect(agent.state.thinkingLevel).toBe("off");
     expect(agent.state.tools).toEqual([]);
     expect(agent.state.messages).toEqual([]);
+  });
+
+  it("binds the selected provider proxy to the stream function", async () => {
+    runtime.buildStreamOptions.mockResolvedValue({});
+
+    await createDyadAgent({
+      model,
+      settings: settings({
+        providerSettings: {
+          openai: { proxyUrl: { value: "http://127.0.0.1:10808" } },
+        },
+      }),
+      chatMode: "ask",
+      systemPrompt: "ask mode",
+    });
+
+    expect(runtime.createDyadStreamFn).toHaveBeenCalledWith(
+      {},
+      "http://127.0.0.1:10808",
+    );
   });
 });

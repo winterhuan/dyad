@@ -1,4 +1,5 @@
 import log from "electron-log";
+import { net } from "electron";
 
 import { DyadError, DyadErrorKind, isDyadError } from "@/errors/dyad_error";
 import type { ProviderApiKeyValidationProvider } from "@/ipc/types";
@@ -9,10 +10,22 @@ import {
 } from "@/lib/providerApiKey";
 import { IS_TEST_BUILD } from "@/ipc/utils/test_utils";
 import { getOpenRouterAppAttributionHeaders } from "@/ipc/utils/openrouter_attribution";
+import { fetchWithProviderProxy } from "@/ipc/pi/provider_proxy_fetch";
 
 const logger = log.scope("provider_api_key_validation");
 
 const VALIDATION_TIMEOUT_MS = 20_000;
+
+type ProviderApiKeyFetch = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
+
+// Electron's network stack honors the app/session proxy configuration. Node's
+// global fetch does not, which makes provider setup fail on networks that reach
+// Google only through a configured proxy.
+const fetchProviderApiKey: ProviderApiKeyFetch = (input, init) =>
+  net.fetch(input, init) as Promise<Response>;
 
 const PROVIDER_DISPLAY_NAMES: Record<ProviderApiKeyValidationProvider, string> =
   {
@@ -20,13 +33,19 @@ const PROVIDER_DISPLAY_NAMES: Record<ProviderApiKeyValidationProvider, string> =
     openrouter: "OpenRouter",
   };
 
-export async function validateProviderApiKey({
-  provider,
-  apiKey,
-}: {
-  provider: ProviderApiKeyValidationProvider;
-  apiKey: string;
-}): Promise<{ ok: true }> {
+export async function validateProviderApiKey(
+  {
+    provider,
+    apiKey,
+  }: {
+    provider: ProviderApiKeyValidationProvider;
+    apiKey: string;
+  },
+  options: {
+    fetchFn?: ProviderApiKeyFetch;
+    proxyUrl?: string;
+  } = {},
+): Promise<{ ok: true }> {
   const normalizedApiKey = normalizeProviderApiKeyInput(apiKey);
   const providerDisplayName = PROVIDER_DISPLAY_NAMES[provider];
 
@@ -57,10 +76,16 @@ export async function validateProviderApiKey({
   });
 
   try {
+    const fetchFn =
+      options.fetchFn ??
+      (options.proxyUrl
+        ? (input, init) =>
+            fetchWithProviderProxy(options.proxyUrl!, input, init)
+        : fetchProviderApiKey);
     const validationPromise =
       provider === "openrouter"
-        ? validateOpenRouterApiKey(normalizedApiKey, controller.signal)
-        : validateGoogleApiKey(normalizedApiKey, controller.signal);
+        ? validateOpenRouterApiKey(normalizedApiKey, controller.signal, fetchFn)
+        : validateGoogleApiKey(normalizedApiKey, controller.signal, fetchFn);
     validationPromise.catch(() => {});
     await Promise.race([validationPromise, timeout]);
     return { ok: true };
@@ -76,7 +101,7 @@ export async function validateProviderApiKey({
 export async function validateOpenRouterApiKey(
   apiKey: string,
   signal: AbortSignal,
-  fetchFn: typeof fetch = fetch,
+  fetchFn: ProviderApiKeyFetch = fetchProviderApiKey,
 ): Promise<void> {
   const response = await fetchFn(`${getOpenRouterBaseUrl()}/key`, {
     method: "GET",
@@ -101,7 +126,7 @@ export async function validateOpenRouterApiKey(
 export async function validateGoogleApiKey(
   apiKey: string,
   signal: AbortSignal,
-  fetchFn: typeof fetch = fetch,
+  fetchFn: ProviderApiKeyFetch = fetchProviderApiKey,
 ): Promise<void> {
   const response = await fetchFn(`${getGoogleBaseUrl()}/models?pageSize=1`, {
     method: "GET",

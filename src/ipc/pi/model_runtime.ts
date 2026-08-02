@@ -32,6 +32,7 @@ import { readSettings } from "@/main/settings";
 import { getLmStudioBaseUrl } from "@/ipc/utils/lm_studio_utils";
 import { getOllamaApiUrl } from "@/ipc/handlers/local_model_ollama_handler";
 import { normalizeProviderApiKeyInput } from "@/lib/providerApiKey";
+import { getOpenAIBaseUrl } from "@/lib/openaiBaseUrl";
 import { getLanguageModelProviders } from "@/ipc/shared/language_model_helpers";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { getEnvVar } from "@/ipc/utils/read_env";
@@ -274,6 +275,11 @@ export type ProviderConfigLookup = (
   providerId: string,
 ) => Promise<LanguageModelProvider | undefined>;
 
+export interface ResolveDyadModelOptions {
+  findProvider?: ProviderConfigLookup;
+  settings?: UserSettings;
+}
+
 async function lookupProviderConfig(
   providerId: string,
 ): Promise<LanguageModelProvider | undefined> {
@@ -283,14 +289,21 @@ async function lookupProviderConfig(
 
 export async function resolveDyadModel(
   model: LargeLanguageModel,
-  findProvider: ProviderConfigLookup = lookupProviderConfig,
+  options: ResolveDyadModelOptions | ProviderConfigLookup = {},
 ): Promise<Model<Api>> {
+  const findProvider =
+    typeof options === "function"
+      ? options
+      : (options.findProvider ?? lookupProviderConfig);
+  const settings = typeof options === "function" ? undefined : options.settings;
   const piProviderId = toPiProviderId(model.provider);
   const models = getPiModels();
+  const openAIBaseUrl =
+    model.provider === "openai" ? getOpenAIBaseUrl(settings) : undefined;
 
   const known = models.getModel(piProviderId, model.name);
   if (known) {
-    return known;
+    return openAIBaseUrl ? { ...known, baseUrl: openAIBaseUrl } : known;
   }
 
   // Handle Dyad-specific local providers by registering them as custom
@@ -378,7 +391,7 @@ export async function resolveDyadModel(
       piProviderId,
       modelId: model.name,
       api: (anyModel?.api ?? "openai-completions") as Api,
-      baseUrl: piProvider.baseUrl ?? anyModel?.baseUrl ?? "",
+      baseUrl: openAIBaseUrl ?? piProvider.baseUrl ?? anyModel?.baseUrl ?? "",
       reasoning: false,
     });
   }

@@ -194,7 +194,7 @@ export async function performCompaction(
     const conversationText = formatAsTranscript(messagesToBackup, chatId);
 
     const compactionModel = settings.selectedModel;
-    const model = await resolveDyadModel(compactionModel);
+    const model = await resolveDyadModel(compactionModel, { settings });
     const streamOptions = await buildStreamOptions(compactionModel, settings);
     const summaryStream = getPiModels().streamSimple(
       model,

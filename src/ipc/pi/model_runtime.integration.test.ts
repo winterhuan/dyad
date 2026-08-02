@@ -9,6 +9,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createResponsesHandler } from "../../../testing/fake-llm-server/responsesHandler";
+import type { UserSettings } from "@/lib/schemas";
 
 import {
   getPiModels,
@@ -136,6 +137,63 @@ describe("pi model runtime HTTP integration", () => {
       expect(result.stopReason).toBe("stop");
       expect(result.content).toEqual([{ type: "text", text: "custom ok" }]);
       expect(authorization).toBe("Bearer not-required");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("streams a real OpenAI request to the configured Base URL", async () => {
+    let requestUrl: string | undefined;
+    let authorization: string | undefined;
+    const handler = createResponsesHandler(".");
+    const server = createServer(async (request, response) => {
+      requestUrl = request.url;
+      authorization = request.headers.authorization;
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) {
+        chunks.push(Buffer.from(chunk));
+      }
+      (request as IncomingMessage & { body: unknown }).body = JSON.parse(
+        Buffer.concat(chunks).toString("utf8"),
+      );
+      await handler(request as never, response as never);
+    });
+
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const address = server.address() as AddressInfo;
+      const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+      const model = await resolveDyadModel(
+        { provider: "openai", name: "gpt-5.2" },
+        {
+          settings: {
+            providerSettings: { openai: { baseUrl } },
+          } as unknown as UserSettings,
+        },
+      );
+      const result = await getPiModels()
+        .streamSimple(
+          model,
+          {
+            messages: [
+              {
+                role: "user",
+                content: "OpenAI Base URL integration",
+                timestamp: Date.now(),
+              },
+            ],
+          },
+          { apiKey: "openai-test-key" },
+        )
+        .result();
+
+      expect(result.stopReason).toBe("stop");
+      expect(requestUrl).toBe("/v1/responses");
+      expect(authorization).toBe("Bearer openai-test-key");
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

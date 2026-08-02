@@ -37,16 +37,17 @@ export interface WebSearchConfig {
 }
 
 /** Tracks which file-editing tools were used on each file path */
-export const FILE_EDIT_TOOL_NAMES = ["write_file"] as const;
+export const FILE_EDIT_TOOL_NAMES = ["write_file", "search_replace"] as const;
 export type FileEditToolName = (typeof FILE_EDIT_TOOL_NAMES)[number];
 export interface FileEditTracker {
   [filePath: string]: {
     write_file: number;
+    search_replace: number;
   };
 }
 
 /**
- * Tools beyond write_file whose invocation still changes the
+ * Tools beyond write_file/search_replace whose invocation still changes the
  * app or its data, so a `run_tests` rerun after one of them is meaningful.
  * Feeds `AgentContext.mutationCount` after successful execution (including
  * indirect workspace mutations).
@@ -109,7 +110,7 @@ export interface AgentContext {
    * the app or its data: file edits
    * plus the tools in `APP_MUTATING_TOOL_NAMES`. This is the
    * signal for `run_tests`' require-a-change guards, which must see fixes made
-   * through any mutating tool, not just write_file.
+   * through any mutating tool, not just the file-edit tools.
    */
   mutationCount?: number;
   /**

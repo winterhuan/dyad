@@ -165,6 +165,45 @@ describe("resolveDyadModel", () => {
     expect(typeof model.api).toBe("string");
   });
 
+  it("overrides the Base URL for a known OpenAI model", async () => {
+    const model = await resolveDyadModel(
+      { provider: "openai", name: "gpt-5.2" },
+      {
+        settings: {
+          providerSettings: {
+            openai: { baseUrl: "https://gateway.example/v1" },
+          },
+        } as unknown as UserSettings,
+      },
+    );
+
+    expect(model.baseUrl).toBe("https://gateway.example/v1");
+  });
+
+  it("overrides the Base URL for an unknown OpenAI model", async () => {
+    const model = await resolveDyadModel(
+      { provider: "openai", name: "gpt-does-not-exist-yet" },
+      {
+        settings: {
+          providerSettings: {
+            openai: { baseUrl: "https://gateway.example/v1" },
+          },
+        } as unknown as UserSettings,
+      },
+    );
+
+    expect(model.baseUrl).toBe("https://gateway.example/v1");
+  });
+
+  it("keeps the official OpenAI Base URL when no override is configured", async () => {
+    const model = await resolveDyadModel(
+      { provider: "openai", name: "gpt-5.2" },
+      { settings: { providerSettings: {} } as UserSettings },
+    );
+
+    expect(model.baseUrl).toBe("https://api.openai.com/v1");
+  });
+
   it("restores a custom provider URL after switching away and back", async () => {
     const providerId = "custom::switching";
     const findProvider = async (_id: string) => ({

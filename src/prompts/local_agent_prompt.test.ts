@@ -15,7 +15,7 @@ describe("local_agent_prompt", () => {
     expect(prompt).toContain(
       "Use `grep` and `list_files` when the relevant files are not reasonably clear",
     );
-    expect(prompt).not.toContain("search_replace");
+    expect(prompt).toContain("search_replace");
     expect(prompt).not.toContain("code_search");
     expect(prompt).not.toContain("explore_code");
     expect(prompt).not.toContain("explore_chat_history");

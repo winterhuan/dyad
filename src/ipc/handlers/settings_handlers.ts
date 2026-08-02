@@ -1,6 +1,8 @@
 import { createTypedHandler } from "./base";
 import { settingsContracts } from "../types/settings";
 import { validateProviderApiKey } from "../services/provider_api_key_validation_service";
+import { getProviderProxyUrl } from "@/lib/providerProxy";
+import { readSettings } from "@/main/settings";
 import {
   deleteWebSearchApiKey,
   getWebSearchCredentialStatus,
@@ -25,7 +27,9 @@ export function registerSettingsHandlers() {
   createTypedHandler(
     settingsContracts.validateProviderApiKey,
     async (_, params) => {
-      return validateProviderApiKey(params);
+      return validateProviderApiKey(params, {
+        proxyUrl: getProviderProxyUrl(readSettings(), params.provider),
+      });
     },
   );
 

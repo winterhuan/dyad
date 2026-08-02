@@ -200,7 +200,7 @@ describe("adaptTool", () => {
       onXmlStream: () => {},
       appendUserMessage: () => {},
     } as unknown as AgentContext;
-    const definition: ToolDefinition<{ path: string }> = {
+    const writeDefinition: ToolDefinition<{ path: string }> = {
       name: "write_file",
       description: "write",
       inputSchema: z.object({ path: z.string() }),
@@ -208,16 +208,30 @@ describe("adaptTool", () => {
       modifiesState: true,
       execute: async () => "written",
     };
-    const tool = adaptTool(definition, {
+    const searchReplaceDefinition: ToolDefinition<{ file_path: string }> = {
+      name: "search_replace",
+      description: "replace",
+      inputSchema: z.object({ file_path: z.string() }),
+      defaultConsent: "always",
+      modifiesState: true,
+      execute: async () => "replaced",
+    };
+    const writeTool = adaptTool(writeDefinition, {
+      contextFactory: () => context,
+    });
+    const searchReplaceTool = adaptTool(searchReplaceDefinition, {
       contextFactory: () => context,
     });
 
-    await tool.execute("call-track", { path: "src/App.tsx" });
+    await writeTool.execute("call-write", { path: "src/App.tsx" });
+    await searchReplaceTool.execute("call-replace", {
+      file_path: "src/App.tsx",
+    });
 
     expect(context.fileEditTracker).toEqual({
-      "src/App.tsx": { write_file: 1 },
+      "src/App.tsx": { write_file: 1, search_replace: 1 },
     });
-    expect(context.mutationCount).toBe(1);
+    expect(context.mutationCount).toBe(2);
   });
 
   it("expands Neon client placeholders before consent and execution", async () => {

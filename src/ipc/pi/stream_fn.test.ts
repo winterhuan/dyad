@@ -26,6 +26,13 @@ const modelRuntime = vi.hoisted(() => ({
   streamSimpleMock: vi.fn(),
   getPiModels: vi.fn(),
 }));
+
+const proxyRuntime = vi.hoisted(() => ({
+  runWithProviderProxy: vi.fn(
+    (_proxyUrl: string | undefined, callback: () => unknown) => callback(),
+  ),
+}));
+vi.mock("./provider_proxy_fetch", () => proxyRuntime);
 modelRuntime.getPiModels.mockReturnValue({
   streamSimple: modelRuntime.streamSimpleMock,
 });
@@ -222,24 +229,52 @@ describe("createDyadStreamFn", () => {
   beforeEach(() => {
     modelRuntime.streamSimpleMock.mockReset();
     modelRuntime.getPiModels.mockClear();
+    proxyRuntime.runWithProviderProxy.mockClear();
   });
 
   it("delegates to models.streamSimple with base options merged under per-call options", () => {
     const sentinel = Symbol("stream");
     modelRuntime.streamSimpleMock.mockReturnValue(sentinel);
 
-    const streamFn = createDyadStreamFn({ maxTokens: 4096, temperature: 0.5 });
+    const streamFn = createDyadStreamFn(
+      { maxTokens: 4096, temperature: 0.5 },
+      "http://127.0.0.1:10808",
+    );
     const piModel = { id: "gpt-5.2" } as never;
     const context = { messages: [] } as never;
 
     const result = streamFn(piModel, context, { temperature: 0.9 } as never);
 
     expect(result).toBe(sentinel);
+    expect(proxyRuntime.runWithProviderProxy).toHaveBeenCalledWith(
+      "http://127.0.0.1:10808",
+      expect.any(Function),
+    );
     expect(modelRuntime.streamSimpleMock).toHaveBeenCalledWith(
       piModel,
       context,
       // per-call temperature overrides the base option
       { maxTokens: 4096, temperature: 0.9 },
     );
+  });
+
+  it("adds the provider proxy to SDK environment options", async () => {
+    tokenUtils.getMaxTokens.mockResolvedValue(undefined);
+    tokenUtils.getTemperature.mockResolvedValue(undefined);
+
+    const options = await buildStreamOptions(
+      { provider: "google", name: "gemini-test" },
+      settings({
+        providerSettings: {
+          google: { proxyUrl: { value: "http://127.0.0.1:10808" } },
+        },
+      }),
+    );
+
+    expect(options.env).toMatchObject({
+      HTTP_PROXY: "http://127.0.0.1:10808",
+      HTTPS_PROXY: "http://127.0.0.1:10808",
+      ALL_PROXY: "http://127.0.0.1:10808",
+    });
   });
 });

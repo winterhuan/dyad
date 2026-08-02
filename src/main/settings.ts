@@ -437,6 +437,11 @@ export function writeSettings(settings: Partial<UserSettings>): void {
           newSettings.providerSettings[provider].apiKey.value,
         );
       }
+      if (newSettings.providerSettings[provider].proxyUrl) {
+        newSettings.providerSettings[provider].proxyUrl = encrypt(
+          newSettings.providerSettings[provider].proxyUrl.value,
+        );
+      }
       // Encrypt Vertex service account key if present
       const v = newSettings.providerSettings[provider] as VertexProviderSetting;
       if (provider === "vertex" && v?.serviceAccountKey) {
@@ -659,6 +664,19 @@ function readExistingSettingsFile(
         combinedSettings.providerSettings[provider].apiKey = resolved;
       } else {
         delete combinedSettings.providerSettings[provider].apiKey;
+      }
+    }
+    if (combinedSettings.providerSettings[provider].proxyUrl) {
+      const resolved = resolveStoredSecret(
+        combinedSettings.providerSettings[provider].proxyUrl,
+        `${provider} proxy URL`,
+        ["providerSettings", provider, "proxyUrl"],
+        ctx,
+      );
+      if (resolved) {
+        combinedSettings.providerSettings[provider].proxyUrl = resolved;
+      } else {
+        delete combinedSettings.providerSettings[provider].proxyUrl;
       }
     }
     // Decrypt Vertex service account key if present

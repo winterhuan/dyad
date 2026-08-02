@@ -57,6 +57,13 @@ vi.mock("@/hooks/useLanguageModelProviders", () => ({
         envVarName: "ANTHROPIC_API_KEY",
         websiteUrl: "https://example.com/api-keys",
       },
+      {
+        id: "openai",
+        name: "OpenAI",
+        type: "cloud",
+        envVarName: "OPENAI_API_KEY",
+        websiteUrl: "https://platform.openai.com/api-keys",
+      },
     ],
     isLoading: false,
     error: null,
@@ -191,6 +198,73 @@ describe("ProviderSettingsPage", () => {
 
     await waitFor(() => expect(mocks.updateSettings).toHaveBeenCalled());
     expect(mocks.sendFirstPrompt).not.toHaveBeenCalled();
+  });
+
+  it("preserves the provider proxy when saving an API key", async () => {
+    mocks.settings = {
+      providerSettings: {
+        google: { proxyUrl: { value: "http://127.0.0.1:10808" } },
+      },
+      defaultChatMode: "local-agent",
+      selectedModel: { provider: "google", name: "gemini-flash-latest" },
+    };
+    mocks.validateProviderApiKey.mockResolvedValue(undefined);
+    mocks.updateSettings.mockResolvedValue(undefined);
+
+    renderProviderSettingsPage();
+    await saveApiKey();
+
+    await waitFor(() =>
+      expect(mocks.updateSettings).toHaveBeenCalledWith({
+        providerSettings: {
+          google: {
+            apiKey: { value: "test-google-key" },
+            proxyUrl: { value: "http://127.0.0.1:10808" },
+          },
+        },
+      }),
+    );
+  });
+
+  it("shows Base URL configuration only for OpenAI", () => {
+    const { unmount } = renderProviderSettingsPage("google");
+    expect(screen.queryByLabelText("OpenAI Base URL")).toBeNull();
+    unmount();
+
+    renderProviderSettingsPage("openai");
+    expect(screen.getByLabelText("OpenAI Base URL")).not.toBeNull();
+  });
+
+  it("preserves the OpenAI Base URL when saving an API key", async () => {
+    mocks.settings = {
+      providerSettings: {
+        openai: {
+          baseUrl: "https://gateway.example/v1",
+          proxyUrl: { value: "http://127.0.0.1:10808" },
+        },
+      },
+      defaultChatMode: "local-agent",
+      selectedModel: { provider: "openai", name: "gpt-5.2" },
+    };
+    mocks.updateSettings.mockResolvedValue(undefined);
+
+    renderProviderSettingsPage("openai");
+    fireEvent.change(screen.getByLabelText("Set OpenAI API Key"), {
+      target: { value: "test-openai-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Key" }));
+
+    await waitFor(() =>
+      expect(mocks.updateSettings).toHaveBeenCalledWith({
+        providerSettings: {
+          openai: {
+            apiKey: { value: "test-openai-key" },
+            baseUrl: "https://gateway.example/v1",
+            proxyUrl: { value: "http://127.0.0.1:10808" },
+          },
+        },
+      }),
+    );
   });
 
   it("nudges toward Paste & Save after returning from the provider website", async () => {

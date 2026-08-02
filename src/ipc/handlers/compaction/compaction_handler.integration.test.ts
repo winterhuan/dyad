@@ -222,10 +222,10 @@ describe("performCompaction", () => {
     );
 
     expect(result).toMatchObject({ success: true });
-    expect(mockResolveDyadModel).toHaveBeenCalledWith({
-      provider: "anthropic",
-      name: "test-model",
-    });
+    expect(mockResolveDyadModel).toHaveBeenCalledWith(
+      { provider: "anthropic", name: "test-model" },
+      { settings: settingsState.current },
+    );
     expect(mockBuildStreamOptions).toHaveBeenCalledWith(
       { provider: "anthropic", name: "test-model" },
       settingsState.current,

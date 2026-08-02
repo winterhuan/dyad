@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DyadErrorKind } from "@/errors/dyad_error";
 
 const mocks = vi.hoisted(() => ({
   readSettings: vi.fn(),
@@ -94,6 +95,68 @@ describe("web search settings service", () => {
       }),
     ).rejects.toThrow("dedicated credential settings");
     expect(mocks.writeSettings).not.toHaveBeenCalled();
+  });
+
+  it("rejects provider proxy protocols that are not supported end to end", async () => {
+    await expect(
+      writeRendererUserSettings({
+        providerSettings: {
+          bedrock: { proxyUrl: { value: "socks5://127.0.0.1:1080" } },
+        },
+      }),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Validation,
+      message: "Proxy URL must use http:// or https://.",
+    });
+    expect(mocks.writeSettings).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid OpenAI Base URL", async () => {
+    await expect(
+      writeRendererUserSettings({
+        providerSettings: {
+          openai: { baseUrl: "ftp://gateway.example/v1" },
+        },
+      }),
+    ).rejects.toMatchObject({
+      kind: DyadErrorKind.Validation,
+      message: "Base URL must use http:// or https://.",
+    });
+    expect(mocks.writeSettings).not.toHaveBeenCalled();
+  });
+
+  it("normalizes an OpenAI Base URL before writing settings", async () => {
+    await writeRendererUserSettings({
+      providerSettings: {
+        openai: {
+          apiKey: { value: "openai-key" },
+          baseUrl: " https://gateway.example/v1/// ",
+        },
+      },
+    });
+
+    expect(mocks.writeSettings).toHaveBeenCalledWith({
+      providerSettings: {
+        openai: {
+          apiKey: { value: "openai-key" },
+          baseUrl: "https://gateway.example/v1",
+        },
+      },
+    });
+  });
+
+  it("allows clearing the OpenAI Base URL", async () => {
+    await writeRendererUserSettings({
+      providerSettings: {
+        openai: { apiKey: { value: "openai-key" }, baseUrl: undefined },
+      },
+    });
+
+    expect(mocks.writeSettings).toHaveBeenCalledWith({
+      providerSettings: {
+        openai: { apiKey: { value: "openai-key" }, baseUrl: undefined },
+      },
+    });
   });
 
   it("normalizes and stores an Exa key", () => {

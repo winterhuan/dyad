@@ -1,6 +1,9 @@
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import { getPiImageModels } from "@/ipc/pi/model_runtime";
 import { getOpenRouterAppAttributionHeaders } from "@/ipc/utils/openrouter_attribution";
+import { getProviderProxyUrl } from "@/lib/providerProxy";
+import { readSettings } from "@/main/settings";
+import { runWithProviderProxy } from "./provider_proxy_fetch";
 
 const DEFAULT_IMAGE_MODEL = "openrouter/auto";
 export const IMAGE_GENERATION_TIMEOUT_MS = 120_000;
@@ -40,14 +43,18 @@ export async function generateImage(
     );
   }
 
-  const result = await models.generateImages(
-    model,
-    { input: [{ type: "text", text: prompt }] },
-    {
-      signal,
-      headers: getOpenRouterAppAttributionHeaders(),
-      timeoutMs: IMAGE_GENERATION_TIMEOUT_MS,
-    },
+  const result = await runWithProviderProxy(
+    getProviderProxyUrl(readSettings(), "openrouter"),
+    () =>
+      models.generateImages(
+        model,
+        { input: [{ type: "text", text: prompt }] },
+        {
+          signal,
+          headers: getOpenRouterAppAttributionHeaders(),
+          timeoutMs: IMAGE_GENERATION_TIMEOUT_MS,
+        },
+      ),
   );
   if (result.stopReason === "aborted") {
     throw new DyadError(

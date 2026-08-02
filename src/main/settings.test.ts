@@ -53,6 +53,7 @@ vi.mock("electron", () => ({
   },
   safeStorage: {
     isEncryptionAvailable: vi.fn(),
+    encryptString: vi.fn(),
     decryptString: vi.fn(),
   },
 }));
@@ -209,6 +210,35 @@ describe("readSettings", () => {
       );
       expect(result.providerSettings.openai.apiKey).toEqual({
         value: "decrypted-api-key",
+        encryptionType: "electron-safe-storage",
+      });
+    });
+
+    it("should decrypt encrypted provider proxy URLs", () => {
+      const mockFileContent = {
+        providerSettings: {
+          openai: {
+            proxyUrl: {
+              value: "encrypted-proxy-url",
+              encryptionType: "electron-safe-storage",
+            },
+          },
+        },
+      };
+
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(mockFileContent));
+      mockSafeStorage.decryptString.mockReturnValue(
+        "http://user:password@proxy.example.com:8080",
+      );
+
+      const result = readSettings();
+
+      expect(mockSafeStorage.decryptString).toHaveBeenCalledWith(
+        Buffer.from("encrypted-proxy-url", "base64"),
+      );
+      expect(result.providerSettings.openai.proxyUrl).toEqual({
+        value: "http://user:password@proxy.example.com:8080",
         encryptionType: "electron-safe-storage",
       });
     });
@@ -846,6 +876,35 @@ describe("writeSettings", () => {
     );
   });
 
+  it("encrypts provider proxy URLs before writing them", () => {
+    mockFs.existsSync.mockReturnValue(false);
+    mockSafeStorage.encryptString.mockReturnValue(
+      Buffer.from("encrypted-proxy-url"),
+    );
+
+    writeSettings({
+      providerSettings: {
+        openai: {
+          proxyUrl: {
+            value: "http://user:password@proxy.example.com:8080",
+          },
+        },
+      },
+    });
+
+    expect(mockSafeStorage.encryptString).toHaveBeenCalledWith(
+      "http://user:password@proxy.example.com:8080",
+    );
+    const tempFileWrite = mockFs.writeFileSync.mock.calls.find(([filePath]) =>
+      String(filePath).startsWith(`${mockSettingsPath}.tmp-`),
+    );
+    const writtenSettings = JSON.parse(String(tempFileWrite?.[1]));
+    expect(writtenSettings.providerSettings.openai.proxyUrl).toEqual({
+      value: Buffer.from("encrypted-proxy-url").toString("base64"),
+      encryptionType: "electron-safe-storage",
+    });
+  });
+
   it("removes retired agent settings during unrelated writes", () => {
     mockFs.existsSync.mockReturnValue(true);
     mockFs.readFileSync.mockReturnValue(
@@ -1139,6 +1198,28 @@ describe("preserving undecryptable secrets", () => {
     // A genuinely-new sibling secret is still encrypted normally.
     expect(stored.providerSettings.anthropic.apiKey).toEqual({
       value: "sk-ant",
+      encryptionType: "plaintext",
+    });
+  });
+
+  it("preserves a locked provider proxy when a write rebuilds providerSettings without it", () => {
+    const locked = lockedSecret("openai-proxy");
+    store[mockSettingsPath] = JSON.stringify({
+      providerSettings: { openai: { proxyUrl: locked } },
+    });
+
+    expect(readSettings().providerSettings.openai?.proxyUrl).toBeUndefined();
+
+    writeSettings({
+      providerSettings: {
+        openai: { apiKey: { value: "sk-openai" } },
+      },
+    });
+
+    const stored = readStoredFile();
+    expect(stored.providerSettings.openai.proxyUrl).toEqual(locked);
+    expect(stored.providerSettings.openai.apiKey).toEqual({
+      value: "sk-openai",
       encryptionType: "plaintext",
     });
   });

@@ -61,6 +61,42 @@
       {
         "type": "function",
         "function": {
+          "name": "search_replace",
+          "description": "Replace one uniquely matching block in an existing file.\n\nMatching is line-based: old_string must contain whole file lines, not a partial fragment within a line. Include enough surrounding lines to make old_string unique. Use separate calls for distinct regions.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "The path to the file you want to search and replace in."
+              },
+              "old_string": {
+                "type": "string",
+                "description": "The text block to replace. Matching is line-based: each line in old_string must match a whole line in the file, not just a substring within a line. To edit part of a line, include the entire original line. The block must be unique within the file."
+              },
+              "new_string": {
+                "type": "string",
+                "description": "The edited text to replace old_string. It must be different from old_string."
+              }
+            },
+            "required": [
+              "file_path",
+              "old_string",
+              "new_string"
+            ],
+            "additionalProperties": false,
+            "~standard": {
+              "vendor": "zod",
+              "version": 1,
+              "jsonSchema": {}
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
           "name": "copy_file",
           "description": "Copy a file from one location to another. Can copy uploaded attachment files (attachments:<name> or .dyad/media paths) into the codebase, or copy files within the codebase.",
           "parameters": {
@@ -184,7 +220,7 @@
         "type": "function",
         "function": {
           "name": "bash",
-          "description": "Run a shell command in the current app root. Use focused, non-interactive commands and avoid starting long-lived development servers.",
+          "description": "Run a user-approved shell command with host user permissions from the current app root. Use focused, non-interactive commands and avoid starting long-lived development servers.",
           "parameters": {
             "type": "object",
             "properties": {
@@ -934,6 +970,32 @@
             },
             "required": [
               "guide"
+            ],
+            "additionalProperties": false,
+            "~standard": {
+              "vendor": "zod",
+              "version": 1,
+              "jsonSchema": {}
+            }
+          },
+          "strict": false
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "read_skill",
+          "description": "Load a skill's full instructions. Use this when the system prompt's available skills match the current task.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "skill": {
+                "type": "string",
+                "description": "Name of the skill to load (from the <available_skills> catalog in the system prompt)"
+              }
+            },
+            "required": [
+              "skill"
             ],
             "additionalProperties": false,
             "~standard": {

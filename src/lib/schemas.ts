@@ -102,16 +102,20 @@ export type LargeLanguageModel = z.infer<typeof LargeLanguageModelSchema>;
  */
 export const RegularProviderSettingSchema = z.object({
   apiKey: SecretSchema.optional(),
+  proxyUrl: SecretSchema.optional(),
+  baseUrl: z.string().optional(),
 });
 
 export const AzureProviderSettingSchema = z.object({
   apiKey: SecretSchema.optional(),
+  proxyUrl: SecretSchema.optional(),
   resourceName: z.string().optional(),
 });
 
 export const VertexProviderSettingSchema = z.object({
   // We make this undefined so that it makes existing callsites easier.
   apiKey: z.undefined(),
+  proxyUrl: SecretSchema.optional(),
   projectId: z.string().optional(),
   location: z.string().optional(),
   serviceAccountKey: SecretSchema.optional(),

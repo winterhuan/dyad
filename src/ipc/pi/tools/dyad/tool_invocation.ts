@@ -33,6 +33,7 @@ export function trackFileEditTool(
   if (!ctx.fileEditTracker[filePath]) {
     ctx.fileEditTracker[filePath] = {
       write_file: 0,
+      search_replace: 0,
     };
   }
   ctx.fileEditTracker[filePath][toolName as FileEditToolName]++;

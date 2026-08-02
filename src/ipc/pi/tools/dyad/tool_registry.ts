@@ -41,6 +41,7 @@ import { renameFileTool } from "./rename_file";
 import { runTestsTool } from "./run_tests";
 import { runTypeChecksTool } from "./run_type_checks";
 import { searchChatsTool } from "./search_chats";
+import { searchReplaceTool } from "./search_replace";
 import { setChatSummaryTool } from "./set_chat_summary";
 import { updateTodosTool } from "./update_todos";
 import { writeAppBlueprintTool } from "./write_app_blueprint";
@@ -51,6 +52,7 @@ import { fetchContentTool, webSearchTool } from "./web_access";
 /** Tool definitions available through the pi pipeline. */
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   writeFileTool,
+  searchReplaceTool,
   copyFileTool,
   deleteFileTool,
   renameFileTool,

@@ -144,6 +144,33 @@ describe("DyadMarkdownParser web access", () => {
   });
 });
 
+describe("DyadMarkdownParser search_replace", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders and expands the targeted edit", () => {
+    render(
+      <DyadMarkdownParser
+        content={
+          '<dyad-search-replace path="novel/chapter.md" description="Revise a paragraph">\n<<<<<<< SEARCH\nOld paragraph\n=======\nNew paragraph\n>>>>>>> REPLACE\n</dyad-search-replace>'
+        }
+      />,
+    );
+
+    const card = screen.getByTestId("dyad-search-replace");
+    expect(screen.getByText("Search & Replace")).toBeTruthy();
+    expect(screen.getByText("chapter.md")).toBeTruthy();
+    expect(screen.getByText("novel/chapter.md")).toBeTruthy();
+    expect(screen.queryByText("Old paragraph")).toBeNull();
+
+    fireEvent.click(card);
+
+    expect(screen.getByText("Old paragraph")).toBeTruthy();
+    expect(screen.getByText("New paragraph")).toBeTruthy();
+  });
+});
+
 describe("DyadMarkdownParser dyad-git", () => {
   afterEach(() => {
     cleanup();

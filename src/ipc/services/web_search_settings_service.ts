@@ -8,6 +8,7 @@ import { searchWeb } from "@/ipc/pi/tools/dyad/web_access";
 import {
   WEB_SEARCH_BRAVE_PROVIDER_ID,
   WEB_SEARCH_EXA_PROVIDER_ID,
+  type RegularProviderSetting,
   type UserSettings,
 } from "@/lib/schemas";
 import {
@@ -20,6 +21,8 @@ import {
   readSettings,
   writeSettings,
 } from "@/main/settings";
+import { parseProviderProxyUrl } from "@/lib/providerProxy";
+import { parseOpenAIBaseUrl } from "@/lib/openaiBaseUrl";
 
 const WEB_SEARCH_PROVIDER_IDS = {
   exa: WEB_SEARCH_EXA_PROVIDER_ID,
@@ -76,6 +79,34 @@ export async function writeRendererUserSettings(
 ): Promise<UserSettings> {
   const incomingProviderSettings = settings.providerSettings;
   if (incomingProviderSettings) {
+    for (const providerSettings of Object.values(incomingProviderSettings)) {
+      const proxyUrl = providerSettings.proxyUrl?.value.trim();
+      if (proxyUrl) {
+        try {
+          parseProviderProxyUrl(proxyUrl);
+        } catch (error) {
+          throw new DyadError(
+            error instanceof Error ? error.message : "Invalid proxy URL.",
+            DyadErrorKind.Validation,
+          );
+        }
+      }
+    }
+    const incomingOpenAISettings = incomingProviderSettings.openai as
+      | RegularProviderSetting
+      | undefined;
+    const incomingOpenAIBaseUrl = incomingOpenAISettings?.baseUrl;
+    let normalizedOpenAIBaseUrl: string | undefined;
+    if (incomingOpenAIBaseUrl?.trim()) {
+      try {
+        normalizedOpenAIBaseUrl = parseOpenAIBaseUrl(incomingOpenAIBaseUrl);
+      } catch (error) {
+        throw new DyadError(
+          error instanceof Error ? error.message : "Invalid Base URL.",
+          DyadErrorKind.Validation,
+        );
+      }
+    }
     for (const providerId of RESERVED_WEB_SEARCH_PROVIDER_IDS) {
       if (Object.hasOwn(incomingProviderSettings, providerId)) {
         throw new DyadError(
@@ -87,6 +118,15 @@ export async function writeRendererUserSettings(
 
     const currentSettings = readSettings();
     const providerSettings = { ...incomingProviderSettings };
+    if (
+      incomingOpenAISettings &&
+      Object.hasOwn(incomingOpenAISettings, "baseUrl")
+    ) {
+      providerSettings.openai = {
+        ...incomingOpenAISettings,
+        baseUrl: normalizedOpenAIBaseUrl,
+      };
+    }
     for (const providerId of RESERVED_WEB_SEARCH_PROVIDER_IDS) {
       const currentProvider = currentSettings.providerSettings[providerId];
       if (currentProvider) {

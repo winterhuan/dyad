@@ -89,6 +89,7 @@ describe("buildPiToolSet", () => {
     // write_file is unconditionally available; execute_sql is gated behind a
     // configured DB integration (isEnabled), so it is intentionally absent here.
     expect(names).toContain("write_file");
+    expect(names).toContain("search_replace");
     expect(names).toContain("bash");
     expect(names).toContain("delete_file");
     expect(names.length).toBeGreaterThan(0);
@@ -97,6 +98,7 @@ describe("buildPiToolSet", () => {
   it("ask mode excludes state-modifying tools but keeps read-only ones", () => {
     const names = toolNames("ask");
     expect(names).not.toContain("write_file");
+    expect(names).not.toContain("search_replace");
     expect(names).not.toContain("bash");
     expect(names).not.toContain("execute_sql");
     expect(names).not.toContain("set_chat_summary");
@@ -155,6 +157,7 @@ describe("buildPiToolSet", () => {
     expect(names).toContain("write_plan");
     expect(names).toContain("exit_plan");
     expect(names).not.toContain("write_file");
+    expect(names).not.toContain("search_replace");
     expect(names).not.toContain("bash");
   });
 
@@ -192,6 +195,7 @@ describe("buildPiToolSet", () => {
     expect(names).toContain("planning_questionnaire");
     expect(names).toContain("read_file");
     expect(names).not.toContain("write_file");
+    expect(names).not.toContain("search_replace");
     expect(names).not.toContain("bash");
     expect(names).not.toContain("delete_file");
     expect(names).not.toContain("set_chat_summary");
