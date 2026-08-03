@@ -231,6 +231,27 @@ describe("ModelPicker", () => {
     expect(mocks.invalidateQueries).toHaveBeenCalled();
   });
 
+  it("supports a controlled model without changing chat settings", () => {
+    mocks.configuredProviders.add("google");
+    const onValueChange = vi.fn();
+    render(
+      <ModelPicker
+        value={{ provider: "openai", name: "gpt-5" }}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Gemini 2.5 Pro").closest("button")!);
+
+    expect(onValueChange).toHaveBeenCalledWith({
+      name: "gemini-2.5-pro",
+      provider: "google",
+      customModelId: undefined,
+    });
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+    expect(mocks.invalidateQueries).not.toHaveBeenCalled();
+  });
+
   it("does not show stale locks while settings are loading", () => {
     mocks.settingsLoading = true;
     render(<ModelPicker />);

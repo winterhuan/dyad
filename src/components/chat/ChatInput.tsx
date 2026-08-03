@@ -1,4 +1,10 @@
-import { StopCircleIcon, SendHorizontalIcon } from "lucide-react";
+import {
+  Loader2,
+  Mic,
+  MicOff,
+  StopCircleIcon,
+  SendHorizontalIcon,
+} from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -68,6 +74,7 @@ import { cn } from "@/lib/utils";
 import { useChatMode } from "@/hooks/useChatMode";
 import { useOpenPreviewIfSetupRequired } from "@/hooks/useOpenPreviewIfSetupRequired";
 import { getUserInputReadModel } from "@/user_input/read_model";
+import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { usePendingToolConsents } from "@/user_input/hooks";
 import type { PendingToolConsent } from "@/user_input/selectors";
 import { useSendPreviewIframeEvent } from "@/preview_iframe/usePreviewIframe";
@@ -149,6 +156,18 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const userInputReadModel = getUserInputReadModel({ store });
   const consentsForThisChat = usePendingToolConsents(chatId);
   const pendingToolConsent = consentsForThisChat[0] ?? null;
+  const handleTranscription = useCallback(
+    (text: string) =>
+      setInputValue((previous) =>
+        previous.trim() ? `${previous} ${text}` : text,
+      ),
+    [setInputValue],
+  );
+  const { isRecording, isTranscribing, toggleRecording } = useVoiceToText({
+    enabled: true,
+    onTranscription: handleTranscription,
+    onError: showErrorToast,
+  });
 
   // The read-model adapter owns optimistic hiding, rollback, and stale-request
   // reconciliation so the request snapshot retains exactly one owner.
@@ -713,6 +732,45 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               messageHistory={userMessageHistory}
             />
 
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={toggleRecording}
+                    disabled={isStreaming || isTranscribing}
+                    aria-label={
+                      isRecording
+                        ? t("stopRecording", "Stop recording")
+                        : isTranscribing
+                          ? t("transcribing", "Transcribing...")
+                          : t("voiceToText", "Voice to text")
+                    }
+                    className={cn(
+                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                      isRecording && "text-red-500 animate-pulse",
+                      !isRecording && !isTranscribing && "hover:text-primary",
+                    )}
+                  />
+                }
+              >
+                {isTranscribing ? (
+                  <Loader2 size={20} className="animate-spin" />
+                ) : isRecording ? (
+                  <MicOff size={20} />
+                ) : (
+                  <Mic size={20} />
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {isRecording
+                  ? t("stopRecording", "Stop recording")
+                  : isTranscribing
+                    ? t("transcribing", "Transcribing...")
+                    : t("voiceToText", "Voice to text")}
+              </TooltipContent>
+            </Tooltip>
+
             {isStreaming ? (
               <Tooltip>
                 <TooltipTrigger
@@ -738,7 +796,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                         (!inputValue.trim() &&
                           attachments.length === 0 &&
                           !hasSuccessfulImageJobs) ||
-                        disableSendButton
+                        disableSendButton ||
+                        isRecording ||
+                        isTranscribing
                       }
                       aria-label={t("sendMessage")}
                       className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 disabled:opacity-30 disabled:hover:text-muted-foreground cursor-pointer disabled:cursor-default"

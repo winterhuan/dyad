@@ -1,6 +1,7 @@
 import type React from "react";
 import { useState, type ReactNode } from "react";
 import { FileCode } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { CustomTagState } from "./stateTypes";
 import {
   DyadCard,
@@ -22,6 +23,7 @@ export const DyadCodeSearch: React.FC<DyadCodeSearchProps> = ({
   children,
   node,
 }) => {
+  const { t } = useTranslation("chat");
   const [isExpanded, setIsExpanded] = useState(false);
   const query =
     node?.properties?.query || (typeof children === "string" ? children : "");
@@ -37,7 +39,7 @@ export const DyadCodeSearch: React.FC<DyadCodeSearchProps> = ({
       isExpanded={isExpanded}
     >
       <DyadCardHeader icon={<FileCode size={15} />} accentColor="indigo">
-        <DyadBadge color="indigo">Code Search</DyadBadge>
+        <DyadBadge color="indigo">{t("codeSearchTool.title")}</DyadBadge>
         {appName && <DyadBadge color="sky">{appName}</DyadBadge>}
         {!isExpanded && query && (
           <span className="text-sm text-muted-foreground italic truncate">
@@ -45,7 +47,10 @@ export const DyadCodeSearch: React.FC<DyadCodeSearchProps> = ({
           </span>
         )}
         {inProgress && (
-          <DyadStateIndicator state="pending" pendingLabel="Searching..." />
+          <DyadStateIndicator
+            state="pending"
+            pendingLabel={t("codeSearchTool.searching")}
+          />
         )}
         <div className="ml-auto">
           <DyadExpandIcon isExpanded={isExpanded} />
@@ -56,7 +61,7 @@ export const DyadCodeSearch: React.FC<DyadCodeSearchProps> = ({
           {query && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">
-                Query:
+                {t("codeSearchTool.query")}:
               </span>
               <div className="italic mt-0.5 text-foreground">{query}</div>
             </div>
@@ -64,7 +69,7 @@ export const DyadCodeSearch: React.FC<DyadCodeSearchProps> = ({
           {children && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">
-                Results:
+                {t("codeSearchTool.results")}:
               </span>
               <div className="mt-0.5 whitespace-pre-wrap font-mono text-xs text-foreground">
                 {children}

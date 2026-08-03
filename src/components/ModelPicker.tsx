@@ -76,7 +76,13 @@ function tierFor(dollarSigns: number | undefined): Tier {
   );
 }
 
-export function ModelPicker() {
+export function ModelPicker({
+  value,
+  onValueChange,
+}: {
+  value?: LargeLanguageModel;
+  onValueChange?: (model: LargeLanguageModel) => void;
+} = {}) {
   const { settings, updateSettings, loading: settingsLoading } = useSettings();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -86,10 +92,13 @@ export function ModelPicker() {
       provider: model.provider,
       model: model.name,
     });
-    void updateSettings({ selectedModel: model });
-    // Invalidate token count when model changes since different models have different context windows
-    // (technically they have different tokenizers, but we don't keep track of that).
-    queryClient.invalidateQueries({ queryKey: queryKeys.tokenCount.all });
+    if (onValueChange) {
+      onValueChange(model);
+    } else {
+      void updateSettings({ selectedModel: model });
+      // A controlled picker does not change the chat model or token budget.
+      queryClient.invalidateQueries({ queryKey: queryKeys.tokenCount.all });
+    }
   };
 
   const [open, setOpen] = useState(false);
@@ -184,10 +193,10 @@ export function ModelPicker() {
   const hasLMStudioModels =
     !lmStudioLoading && !lmStudioError && lmStudioModels.length > 0;
 
-  if (!settings) {
+  if (!settings || !(value ?? settings.selectedModel)) {
     return null;
   }
-  const selectedModel = settings?.selectedModel;
+  const selectedModel = value ?? settings.selectedModel;
   const modelDisplayName = getModelDisplayName();
   // Split providers into primary and secondary groups.
   const providerEntries =

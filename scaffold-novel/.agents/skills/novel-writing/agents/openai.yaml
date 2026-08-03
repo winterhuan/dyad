@@ -1,0 +1,6 @@
+interface:
+  display_name: "Novel Writing"
+  short_description: "Plan and revise fiction manuscripts"
+  default_prompt: "Use $novel-writing to plan and draft the next scene in this manuscript."
+policy:
+  allow_implicit_invocation: true

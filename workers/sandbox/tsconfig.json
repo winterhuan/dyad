@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "ignoreDeprecations": "6.0",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "types": ["node"],
+    "noEmit": true,
+    "composite": false,
+    "incremental": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/tsbuildinfo/sandbox.tsbuildinfo"
+  },
+  "include": ["./**/*.ts", "../../shared/sandbox_types.ts"]
+}

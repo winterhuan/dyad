@@ -1,0 +1,42 @@
+export type VoiceStopReason = "user" | "duration" | "size";
+
+export type VoiceState =
+  | { type: "idle" }
+  | { type: "acquiring"; attempt: string }
+  | { type: "recording"; attempt: string }
+  | { type: "stopping"; attempt: string; reason: VoiceStopReason }
+  | { type: "transcribing"; attempt: string };
+
+export type VoiceEvent =
+  | { type: "TOGGLE"; attempt: string }
+  | { type: "MEDIA_ACQUIRED"; attempt: string }
+  | { type: "MEDIA_DENIED"; attempt: string; message: string }
+  | { type: "SIZE_LIMIT_REACHED"; attempt: string }
+  | { type: "DURATION_ELAPSED"; attempt: string }
+  | { type: "RECORDER_STOPPED"; attempt: string; hasAudio: boolean }
+  | { type: "TRANSCRIPTION_OK"; attempt: string; text: string }
+  | { type: "TRANSCRIPTION_FAILED"; attempt: string; message: string };
+
+export type VoiceCommand =
+  | { type: "AcquireMedia"; attempt: string }
+  | { type: "StartRecorder"; attempt: string }
+  | { type: "StopRecorder"; attempt: string; reason: VoiceStopReason | null }
+  | { type: "ReleaseMedia"; attempt: string }
+  | { type: "ScheduleDurationLimit"; attempt: string }
+  | { type: "CancelDurationLimit"; attempt: string }
+  | { type: "Transcribe"; attempt: string }
+  | { type: "DeliverTranscription"; text: string }
+  | { type: "NotifyError"; message: string };
+
+export type VoiceIgnoreReason =
+  | "start-in-flight"
+  | "busy"
+  | "invalid-in-current-state"
+  | "stale-attempt";
+
+export type VoiceTransitionResult =
+  import("@/state_machines/types").TransitionResult<
+    VoiceState,
+    VoiceCommand,
+    VoiceIgnoreReason
+  >;

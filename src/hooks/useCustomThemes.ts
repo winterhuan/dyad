@@ -3,6 +3,7 @@ import { ipc } from "@/ipc/types";
 import type {
   CustomTheme,
   CreateCustomThemeParams,
+  GenerateThemePromptParams,
   UpdateCustomThemeParams,
 } from "@/ipc/types";
 import { queryKeys } from "@/lib/queryKeys";
@@ -78,5 +79,12 @@ export function useDeleteCustomTheme() {
         queryKey: queryKeys.customThemes.all,
       });
     },
+  });
+}
+
+export function useGenerateThemePrompt() {
+  return useMutation({
+    mutationFn: async (params: GenerateThemePromptParams) =>
+      ipc.template.generateThemePrompt(params),
   });
 }

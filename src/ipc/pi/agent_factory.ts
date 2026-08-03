@@ -32,6 +32,8 @@ export interface CreateDyadAgentParams {
   sessionId?: string;
   /** Correlation id forwarded to the provider request headers. */
   dyadRequestId?: string;
+  /** Optional per-turn output cap for bounded internal agent runs. */
+  maxTokens?: number;
 }
 
 /**
@@ -63,10 +65,14 @@ export async function createDyadAgent(
     messages,
     sessionId,
     dyadRequestId,
+    maxTokens,
   } = params;
 
   const piModel = await resolveDyadModel(model, { settings });
   const baseOptions = await buildStreamOptions(model, settings, dyadRequestId);
+  if (maxTokens !== undefined) {
+    baseOptions.maxTokens = maxTokens;
+  }
   const streamFn = createDyadStreamFn(
     baseOptions,
     getProviderProxyUrl(settings, model.provider),

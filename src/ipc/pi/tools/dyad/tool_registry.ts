@@ -12,10 +12,12 @@ import { addDependencyTool } from "./add_dependency";
 import { addIntegrationTool } from "./add_integration";
 import { rebuildAppTool, restartAppTool } from "./app_lifecycle";
 import { bashTool } from "./bash";
+import { codeSearchTool } from "./code_search";
 import { copyFileTool } from "./copy_file";
 import { deleteFileTool } from "./delete_file";
 import { enableNitroTool } from "./enable_nitro";
 import { executeSqlTool } from "./execute_sql";
+import { executeSandboxScriptTool } from "./execute_sandbox_script";
 import { exitPlanTool } from "./exit_plan";
 import { generateImageTool } from "./generate_image";
 import { getDatabaseTableSchemaTool } from "./get_database_table_schema";
@@ -30,6 +32,8 @@ import {
   gitStatusTool,
 } from "./git";
 import { grepTool } from "./grep";
+import { exploreCodeTool } from "./explore_code";
+import { exploreChatHistoryTool } from "./explore_chat_history";
 import { listFilesTool } from "./list_files";
 import { planningQuestionnaireTool } from "./planning_questionnaire";
 import { readChatTool } from "./read_chat";
@@ -47,7 +51,7 @@ import { updateTodosTool } from "./update_todos";
 import { writeAppBlueprintTool } from "./write_app_blueprint";
 import { writeFileTool } from "./write_file";
 import { writePlanTool } from "./write_plan";
-import { fetchContentTool, webSearchTool } from "./web_access";
+import { fetchContentTool, webCrawlTool, webSearchTool } from "./web_access";
 
 /** Tool definitions available through the pi pipeline. */
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
@@ -58,6 +62,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   renameFileTool,
   addDependencyTool,
   bashTool,
+  executeSandboxScriptTool,
   executeSqlTool,
   readFileTool,
   listFilesTool,
@@ -68,8 +73,12 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   gitShowFileTool,
   gitRestoreFileTool,
   grepTool,
+  codeSearchTool,
+  exploreCodeTool,
+  exploreChatHistoryTool,
   webSearchTool,
   fetchContentTool,
+  webCrawlTool,
   searchChatsTool,
   readChatTool,
   getSupabaseProjectInfoTool,

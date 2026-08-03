@@ -78,6 +78,9 @@
   "dismissError": "Dispensar erro",
   "cancelGeneration": "Cancelar geração",
   "sendMessage": "Enviar mensagem",
+  "voiceToText": "Voz para texto",
+  "stopRecording": "Parar gravacao",
+  "transcribing": "Transcrevendo...",
   "loadingProposal": "Carregando proposta...",
   "errorLoadingProposal": "Erro ao carregar proposta: {{message}}",
   "summarizeNewChatTip": "Criar um novo chat torna a IA mais focada e eficiente",
@@ -118,6 +121,20 @@
     "didNotFinish": "Não terminou",
     "chatNumber": "Chat nº {{chatId}}",
     "messagesRange": "mensagens {{range}}"
+  },
+  "exploreChatHistoryTool": {
+    "badge": "HISTÓRICO",
+    "title": "Explorar histórico de chats",
+    "summary": "{{chats}} chats · {{evidence}} mensagens",
+    "exploring": "Explorando...",
+    "didNotFinish": "Não foi concluído",
+    "failed": "Falhou"
+  },
+  "codeSearchTool": {
+    "title": "Busca de codigo",
+    "searching": "Buscando...",
+    "query": "Consulta",
+    "results": "Resultados"
   },
   "git": {
     "checkingChanges": "Verificando alterações do projeto",

@@ -3,10 +3,15 @@ import { ArrowLeft } from "lucide-react";
 import { ipc } from "@/ipc/types";
 import { useSettings } from "@/hooks/useSettings";
 import { CommunityCodeConsentDialog } from "./CommunityCodeConsentDialog";
-import type { Template } from "@/shared/templates";
+import { NOVEL_TEMPLATE_ID, type Template } from "@/shared/templates";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 import { showWarning } from "@/lib/toast";
+
+const novelTemplatePreview = new URL(
+  "../../assets/templates/novel-workspace.png",
+  import.meta.url,
+).href;
 
 interface TemplateCardProps {
   template: Template;
@@ -23,6 +28,10 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({
 }) => {
   const { settings, updateSettings } = useSettings();
   const [showConsentDialog, setShowConsentDialog] = useState(false);
+  const imageUrl =
+    template.id === NOVEL_TEMPLATE_ID
+      ? novelTemplatePreview
+      : template.imageUrl;
 
   const handleCardClick = () => {
     // If it's a community template and user hasn't accepted community code yet, show dialog
@@ -80,7 +89,7 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({
       >
         <div className="relative">
           <img
-            src={template.imageUrl}
+            src={imageUrl}
             alt={template.title}
             className={`w-full h-52 object-cover transition-opacity duration-300 group-hover:opacity-80 ${
               isSelected ? "opacity-75" : ""

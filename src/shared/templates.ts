@@ -19,6 +19,15 @@ export interface ApiTemplate {
 }
 
 export const DEFAULT_TEMPLATE_ID = "react";
+export const NOVEL_TEMPLATE_ID = "novel";
+
+export function shouldCreateAppBlueprint(
+  templateId: string | undefined,
+  blueprintEnabled: boolean | undefined,
+): boolean {
+  return blueprintEnabled === true && templateId !== NOVEL_TEMPLATE_ID;
+}
+
 export const DEFAULT_TEMPLATE = {
   id: "react",
   title: "React.js Template",
@@ -33,6 +42,14 @@ export const NEON_TEMPLATE_IDS = new Set<string>([PORTAL_MINI_STORE_ID]);
 
 export const localTemplatesData: Template[] = [
   DEFAULT_TEMPLATE,
+  {
+    id: NOVEL_TEMPLATE_ID,
+    title: "Novel Writing Studio",
+    description:
+      "A manuscript workspace with story planning files and an AI writing skill.",
+    imageUrl: "builtin://novel-workspace",
+    isOfficial: true,
+  },
   {
     id: "next",
     title: "Next.js Template",

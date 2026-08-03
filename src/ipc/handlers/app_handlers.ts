@@ -52,6 +52,7 @@ import { appRuntimeService } from "../services/app_runtime_service";
 import { getPtySessionManager } from "../utils/pty_session_manager";
 import { userInputRegistry } from "@/user_input/main";
 import { clearWindowSessionPersistence } from "@/window_infrastructure/main/window_session_persistence";
+import { shouldCreateAppBlueprint } from "@/shared/templates";
 
 /**
  * Read screenshot entries for a single app directory, filtered by filename
@@ -618,7 +619,10 @@ export function registerAppHandlers() {
         .values({
           name: appName,
           path: appPath,
-          needsAppBlueprint: settings.enableAppBlueprint,
+          needsAppBlueprint: shouldCreateAppBlueprint(
+            settings.selectedTemplateId,
+            settings.enableAppBlueprint,
+          ),
           // Opt newly created apps into E2E testing when the user has enabled
           // the "testing for new apps" setting. Otherwise fall back to the
           // column default (off).

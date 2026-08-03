@@ -78,6 +78,9 @@
   "dismissError": "오류 무시",
   "cancelGeneration": "생성 취소",
   "sendMessage": "메시지 보내기",
+  "voiceToText": "음성을 텍스트로",
+  "stopRecording": "녹음 중지",
+  "transcribing": "변환 중...",
   "loadingProposal": "제안을 불러오는 중...",
   "errorLoadingProposal": "제안 불러오기 오류: {{message}}",
   "summarizeNewChatTip": "새 채팅을 만들면 AI가 더 집중적이고 효율적으로 작동합니다",
@@ -118,6 +121,20 @@
     "didNotFinish": "완료되지 않음",
     "chatNumber": "채팅 #{{chatId}}",
     "messagesRange": "메시지 {{range}}"
+  },
+  "exploreChatHistoryTool": {
+    "badge": "기록",
+    "title": "채팅 기록 탐색",
+    "summary": "채팅 {{chats}}개 · 메시지 {{evidence}}개",
+    "exploring": "탐색 중...",
+    "didNotFinish": "완료되지 않음",
+    "failed": "실패"
+  },
+  "codeSearchTool": {
+    "title": "코드 검색",
+    "searching": "검색 중...",
+    "query": "검색어",
+    "results": "결과"
   },
   "git": {
     "checkingChanges": "프로젝트 변경 사항 확인 중",

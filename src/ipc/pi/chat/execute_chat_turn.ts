@@ -232,6 +232,7 @@ export async function executePiChatTurn(
     pendingFunctionDeploys: [],
     todos: persistedTodos,
     dyadRequestId: input.dyadRequestId,
+    selectedModel: input.settings.selectedModel,
     toolConsents,
     autoApproveNonSchemaSql: input.settings.autoApproveNonSchemaSql === true,
     webAccessEnabled: input.settings.enableWebAccess === true,

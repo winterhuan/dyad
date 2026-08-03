@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { IpcMainInvokeEvent } from "electron";
 import { jsonrepair } from "jsonrepair";
+import type { LargeLanguageModel } from "@/lib/schemas";
 import { AgentToolConsent } from "@/lib/schemas";
 import { AgentTodo } from "@/ipc/types";
 import type { AppFrameworkType } from "@/lib/framework_constants";
@@ -97,6 +98,8 @@ export interface AgentContext {
   todos: Todo[];
   /** Correlation ID for this model request. */
   dyadRequestId: string;
+  /** Model selected when this turn was accepted. */
+  selectedModel?: LargeLanguageModel;
   /** Effective per-tool consent values captured when this turn was accepted. */
   toolConsents: Readonly<Record<string, AgentToolConsent>>;
   /** SQL auto-approval policy captured with the rest of the turn settings. */

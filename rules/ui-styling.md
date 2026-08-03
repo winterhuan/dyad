@@ -11,6 +11,12 @@ When adding a brand mark for an AI provider (or any well-known SaaS brand), pref
 
 Embed as inline React SVG components (see `src/components/ProviderIcon.tsx` for the pattern). For SVGs with `<linearGradient>` defs, hard-coded gradient IDs are fine — browsers resolve `url(#id)` to the first definition encountered, and multiple instances of the same icon use the same gradient definition, so there's no need to generate per-instance unique IDs.
 
+For renderer-owned bitmap assets outside `src/`, prefer
+`new URL("../../assets/example.png", import.meta.url).href`. The root TypeScript
+config does not declare arbitrary `*.png` imports, so a direct import can fail
+`npm run ts` with `TS2307` even though Vite can bundle it; confirm the resulting
+hashed asset is present in `app.asar`.
+
 ## Scrollable popovers and dropdowns
 
 Use the global `.scrollbar-on-hover` class (defined in `src/styles/globals.css`) for thin, hover-only scrollbars in dropdowns, submenus, and popovers. The OS default scrollbar (12px chrome) looks chunky inside small popups — `.scrollbar-on-hover` collapses to a transparent track and only reveals a thin thumb on hover/focus.

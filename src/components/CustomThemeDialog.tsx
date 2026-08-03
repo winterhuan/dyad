@@ -14,6 +14,9 @@ import { Loader2 } from "lucide-react";
 import { useCreateCustomTheme } from "@/hooks/useCustomThemes";
 import { showError } from "@/lib/toast";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AIGeneratorTab } from "./AIGeneratorTab";
 
 interface CustomThemeDialogProps {
   open: boolean;
@@ -26,9 +29,11 @@ export function CustomThemeDialog({
   onOpenChange,
   onThemeCreated,
 }: CustomThemeDialogProps) {
+  const { t } = useTranslation("home");
   const [manualName, setManualName] = useState("");
   const [manualDescription, setManualDescription] = useState("");
   const [manualPrompt, setManualPrompt] = useState("");
+  const [themeTab, setThemeTab] = useState<"manual" | "ai">("manual");
 
   const createThemeMutation = useCreateCustomTheme();
 
@@ -36,6 +41,7 @@ export function CustomThemeDialog({
     setManualName("");
     setManualDescription("");
     setManualPrompt("");
+    setThemeTab("manual");
   }, []);
 
   const handleClose = useCallback(async () => {
@@ -109,16 +115,39 @@ export function CustomThemeDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="manual-prompt">Theme Prompt</Label>
-            <Textarea
-              id="manual-prompt"
-              placeholder="Enter your theme system prompt..."
-              className="min-h-[200px] font-mono text-sm"
-              value={manualPrompt}
-              onChange={(e) => setManualPrompt(e.target.value)}
-            />
-          </div>
+          <Tabs
+            value={themeTab}
+            onValueChange={(value) => {
+              if (value === "manual" || value === "ai") setThemeTab(value);
+            }}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="manual">
+                {t("customTheme.manualTab")}
+              </TabsTrigger>
+              <TabsTrigger value="ai">{t("customTheme.aiTab")}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="manual">
+              <div className="space-y-2">
+                <Label htmlFor="manual-prompt">Theme Prompt</Label>
+                <Textarea
+                  id="manual-prompt"
+                  placeholder="Enter your theme system prompt..."
+                  className="min-h-[200px] font-mono text-sm"
+                  value={manualPrompt}
+                  onChange={(e) => setManualPrompt(e.target.value)}
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="ai">
+              {themeTab === "ai" && (
+                <AIGeneratorTab
+                  prompt={manualPrompt}
+                  onPromptChange={setManualPrompt}
+                />
+              )}
+            </TabsContent>
+          </Tabs>
 
           <Button
             onClick={handleSave}

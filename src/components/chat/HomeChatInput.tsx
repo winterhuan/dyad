@@ -2,6 +2,9 @@ import {
   SendHorizontalIcon,
   StopCircleIcon,
   FolderOpenIcon,
+  Loader2,
+  Mic,
+  MicOff,
   XIcon,
 } from "lucide-react";
 import {
@@ -13,7 +16,7 @@ import {
 import { useSettings } from "@/hooks/useSettings";
 import { homeChatInputValueAtom, homeSelectedAppAtom } from "@/atoms/chatAtoms";
 import { useAtom } from "jotai";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useAttachments } from "@/hooks/useAttachments";
 import { AttachmentsList } from "./AttachmentsList";
@@ -28,6 +31,9 @@ import { AuxiliaryActionsMenu } from "./AuxiliaryActionsMenu";
 import { cn } from "@/lib/utils";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { AppSearchDialog } from "../AppSearchDialog";
+import { useVoiceToText } from "@/hooks/useVoiceToText";
+import { showError } from "@/lib/toast";
+import { useTranslation } from "react-i18next";
 
 export function HomeChatInput({
   onSubmit,
@@ -36,9 +42,24 @@ export function HomeChatInput({
   onSubmit: (options?: HomeSubmitOptions) => boolean | Promise<boolean>;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation("chat");
   const [inputValue, setInputValue] = useAtom(homeChatInputValueAtom);
   const [selectedApp, setSelectedApp] = useAtom(homeSelectedAppAtom);
   const { settings } = useSettings();
+  const handleTranscription = useCallback(
+    (text: string) => {
+      if (disabled) return;
+      setInputValue((previous) =>
+        previous.trim() ? `${previous} ${text}` : text,
+      );
+    },
+    [disabled, setInputValue],
+  );
+  const { isRecording, isTranscribing, toggleRecording } = useVoiceToText({
+    enabled: !disabled,
+    onTranscription: handleTranscription,
+    onError: showError,
+  });
   const { isStreaming } = useStreamChat({
     hasChatId: false,
   }); // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -160,6 +181,45 @@ export function HomeChatInput({
               messageHistory={[]}
             />
 
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={toggleRecording}
+                    disabled={disabled || isStreaming || isTranscribing}
+                    aria-label={
+                      isRecording
+                        ? t("stopRecording")
+                        : isTranscribing
+                          ? t("transcribing")
+                          : t("voiceToText")
+                    }
+                    className={cn(
+                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                      isRecording && "text-red-500 animate-pulse",
+                      !isRecording && !isTranscribing && "hover:text-primary",
+                    )}
+                  />
+                }
+              >
+                {isTranscribing ? (
+                  <Loader2 size={20} className="animate-spin" />
+                ) : isRecording ? (
+                  <MicOff size={20} />
+                ) : (
+                  <Mic size={20} />
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {isRecording
+                  ? t("stopRecording")
+                  : isTranscribing
+                    ? t("transcribing")
+                    : t("voiceToText")}
+              </TooltipContent>
+            </Tooltip>
+
             {isStreaming ? (
               <Tooltip>
                 <TooltipTrigger
@@ -184,6 +244,8 @@ export function HomeChatInput({
                       onClick={handleCustomSubmit}
                       disabled={
                         disabled ||
+                        isRecording ||
+                        isTranscribing ||
                         (!inputValue.trim() && attachments.length === 0)
                       }
                       aria-label="Send message"

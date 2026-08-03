@@ -78,6 +78,9 @@
   "dismissError": "Dismiss error",
   "cancelGeneration": "Cancel generation",
   "sendMessage": "Send message",
+  "voiceToText": "Voice to text",
+  "stopRecording": "Stop recording",
+  "transcribing": "Transcribing...",
   "loadingProposal": "Loading proposal...",
   "errorLoadingProposal": "Error loading proposal: {{message}}",
   "summarizeNewChatTip": "Creating a new chat makes the AI more focused and efficient",
@@ -118,6 +121,20 @@
     "didNotFinish": "Did not finish",
     "chatNumber": "Chat #{{chatId}}",
     "messagesRange": "messages {{range}}"
+  },
+  "exploreChatHistoryTool": {
+    "badge": "HISTORY",
+    "title": "Explore chat history",
+    "summary": "{{chats}} chats · {{evidence}} messages",
+    "exploring": "Exploring...",
+    "didNotFinish": "Did not finish",
+    "failed": "Failed"
+  },
+  "codeSearchTool": {
+    "title": "Code Search",
+    "searching": "Searching...",
+    "query": "Query",
+    "results": "Results"
   },
   "git": {
     "checkingChanges": "Checking project changes",

@@ -7,8 +7,32 @@ import { readSettings } from "@/main/settings";
 import { getTemplateOrThrow } from "../utils/template_utils";
 import log from "electron-log";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { NOVEL_TEMPLATE_ID } from "@/shared/templates";
 
 const logger = log.scope("createFromTemplate");
+
+const BUILT_IN_TEMPLATE_LAYERS: Record<string, readonly string[]> = {
+  react: ["scaffold"],
+  [NOVEL_TEMPLATE_ID]: ["scaffold", "scaffold-novel"],
+};
+
+async function copyBuiltInTemplate(
+  templateId: string,
+  fullAppPath: string,
+): Promise<boolean> {
+  const layers = BUILT_IN_TEMPLATE_LAYERS[templateId];
+  if (!layers) return false;
+
+  for (const layer of layers) {
+    const packagedPath = path.join(__dirname, "..", "..", layer);
+    const repoPath = path.join(process.cwd(), layer);
+    await copyDirectoryRecursive(
+      fs.existsSync(packagedPath) ? packagedPath : repoPath,
+      fullAppPath,
+    );
+  }
+  return true;
+}
 
 export async function createFromTemplate({
   fullAppPath,
@@ -17,18 +41,9 @@ export async function createFromTemplate({
   fullAppPath: string;
   templateId?: string;
 }) {
-  const settings = readSettings();
-  const templateId = requestedTemplateId ?? settings.selectedTemplateId;
+  const templateId = requestedTemplateId ?? readSettings().selectedTemplateId;
 
-  if (templateId === "react") {
-    const sourceScaffoldPath = path.join(__dirname, "..", "..", "scaffold");
-    const repoScaffoldPath = path.join(process.cwd(), "scaffold");
-    await copyDirectoryRecursive(
-      fs.existsSync(sourceScaffoldPath) ? sourceScaffoldPath : repoScaffoldPath,
-      fullAppPath,
-    );
-    return;
-  }
+  if (await copyBuiltInTemplate(templateId, fullAppPath)) return;
 
   const template = await getTemplateOrThrow(templateId);
   if (!template.githubUrl) {

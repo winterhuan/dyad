@@ -115,6 +115,10 @@ layer around the adapter.
 
 - Add focused unit tests for schemas, mode filtering, consent, and pure safety
   logic.
+- For built-in templates that ship project skills under `.agents/skills/`,
+  validate each skill with the skill validator and call
+  `discoverProjectSkills` against the fully copied template. File-existence
+  checks alone do not prove the agent can load its frontmatter.
 - Use chat-flow integration tests for real files, Git, database rows, provider
   requests, cancellation, and persistence.
 - Use hybrid tests only for rendered consent or tool-card behavior.

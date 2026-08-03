@@ -36,3 +36,8 @@ approval, template apply).
   work can become stale and recreate files in the app's former directory. If a
   workflow releases the lock across an `await` (for example, while cancelling
   streams), re-fetch the row and recompute the path after reacquiring it.
+- Build specialized local templates as ordered overlays on the shared
+  `scaffold/` instead of duplicating it. Resolve each layer from the packaged
+  `__dirname` first with a repository-root fallback, test a real copy into a
+  temporary directory, and inspect `app.asar` after packaging to prove every
+  overlay is included.

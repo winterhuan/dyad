@@ -3,12 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 import { DyadErrorKind } from "@/errors/dyad_error";
 import {
   assertPublicHttpUrl,
+  crawlPublicSite,
   searchWeb,
   type WebSearchConfig,
   webSearchTool,
 } from "./web_access";
 
 describe("web access", () => {
+  it("allows public IPv4 URLs", async () => {
+    await expect(
+      assertPublicHttpUrl("https://8.8.8.8/"),
+    ).resolves.toMatchObject({
+      hostname: "8.8.8.8",
+    });
+  });
+
   it.each([
     "http://127.0.0.1:3000/private",
     "http://localhost/admin",
@@ -116,5 +125,28 @@ describe("web access", () => {
         provider: "brave",
       }),
     ).toEqual({ query: "Dyad docs" });
+  });
+
+  it("crawls a bounded set of same-origin pages", async () => {
+    const fetchPage = vi.fn(async (url: string) => ({
+      url,
+      title: url.endsWith("/docs") ? "Docs" : "Home",
+      content: `content:${url}`,
+      links: url.endsWith("/docs")
+        ? []
+        : ["https://8.8.8.8/docs", "https://other.example/private"],
+    }));
+
+    const result = await crawlPublicSite(
+      { url: "https://8.8.8.8/", max_pages: 2 },
+      undefined,
+      fetchPage,
+    );
+
+    expect(result.pages).toHaveLength(2);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(fetchPage.mock.calls.map(([url]) => url)).not.toContain(
+      "https://other.example/private",
+    );
   });
 });

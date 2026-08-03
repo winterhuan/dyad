@@ -10,6 +10,7 @@ import { DyadAddDependency } from "./DyadAddDependency";
 import { DyadExecuteSql } from "./DyadExecuteSql";
 import { DyadLogs } from "./DyadLogs";
 import { DyadGrep } from "./DyadGrep";
+import { DyadCodeSearch } from "./DyadCodeSearch";
 import { DyadSearchChats } from "./DyadSearchChats";
 import { DyadReadChat } from "./DyadReadChat";
 import { DyadAddIntegration } from "./DyadAddIntegration";
@@ -50,6 +51,10 @@ import { DyadGit } from "./DyadGit";
 import { DyadWebFetch } from "./DyadWebFetch";
 import { DyadWebSearch } from "./DyadWebSearch";
 import { DyadWebSearchResult } from "./DyadWebSearchResult";
+import { DyadWebCrawl } from "./DyadWebCrawl";
+import { DyadExploreCode } from "./DyadExploreCode";
+import { DyadExploreChatHistory } from "./DyadExploreChatHistory";
+import { DyadScript } from "./DyadScript";
 import { mapActionToButton } from "./ChatInput";
 import { SuggestedAction } from "@/lib/schemas";
 import { FixAllErrorsButton } from "./FixAllErrorsButton";
@@ -366,6 +371,66 @@ function renderCustomTag(
   const { tag, attributes, content, inProgress } = block;
 
   switch (tag) {
+    case "dyad-script":
+      return (
+        <DyadScript
+          node={{
+            properties: {
+              ...attributes,
+              executionMs: attributes.execution_ms || "",
+              fullOutputPath: attributes.full_output_path || "",
+            },
+          }}
+        >
+          {content}
+        </DyadScript>
+      );
+    case "dyad-web-crawl":
+      return <DyadWebCrawl>{content}</DyadWebCrawl>;
+
+    case "dyad-code-search":
+      return (
+        <DyadCodeSearch
+          node={{
+            properties: {
+              query: attributes.query || "",
+              appName: attributes.app_name || "",
+              state: getState({ isStreaming, inProgress }),
+            },
+          }}
+        >
+          {content}
+        </DyadCodeSearch>
+      );
+    case "dyad-explore-code":
+      return (
+        <DyadExploreCode
+          node={{
+            properties: {
+              ...attributes,
+              appName: attributes.app_name || "",
+              indexMs: attributes.index_ms || "",
+              searchMs: attributes.search_ms || "",
+              state: getState({ isStreaming, inProgress }),
+            },
+          }}
+        >
+          {content}
+        </DyadExploreCode>
+      );
+    case "dyad-explore-chat-history":
+      return (
+        <DyadExploreChatHistory
+          node={{
+            properties: {
+              ...attributes,
+              state: getState({ isStreaming, inProgress }),
+            },
+          }}
+        >
+          {content}
+        </DyadExploreChatHistory>
+      );
     case "dyad-web-search":
       return (
         <DyadWebSearch

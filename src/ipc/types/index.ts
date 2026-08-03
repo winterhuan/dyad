@@ -57,6 +57,7 @@ export { visualEditingContracts } from "./visual-editing";
 export { securityContracts } from "./security";
 export { miscContracts, miscEvents } from "./misc";
 export { mediaContracts } from "./media";
+export { audioContracts, audioSendContracts } from "./audio";
 export {
   imageGenerationContracts,
   imageGenerationEvents,
@@ -106,6 +107,7 @@ export { visualEditingClient } from "./visual-editing";
 export { securityClient } from "./security";
 export { miscClient, miscEventClient } from "./misc";
 export { mediaClient } from "./media";
+export { audioClient } from "./audio";
 export {
   imageGenerationClient,
   imageGenerationEventClient,
@@ -303,6 +305,7 @@ export type {
   GetAppThemeParams,
   CustomTheme,
   CreateCustomThemeParams,
+  GenerateThemePromptParams,
   UpdateCustomThemeParams,
   DeleteCustomThemeParams,
 } from "./templates";
@@ -425,6 +428,7 @@ import { visualEditingClient } from "./visual-editing";
 import { securityClient } from "./security";
 import { miscClient, miscEventClient } from "./misc";
 import { mediaClient } from "./media";
+import { audioClient } from "./audio";
 import {
   imageGenerationClient,
   imageGenerationEventClient,
@@ -496,6 +500,7 @@ export const ipc = {
   security: securityClient,
   misc: miscClient,
   media: mediaClient,
+  audio: audioClient,
   appBlueprint: appBlueprintClient,
   appCollection: appCollectionClient,
   terminal: terminalClient,

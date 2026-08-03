@@ -41,6 +41,7 @@ import { securityContracts } from "../types/security";
 import { miscContracts, miscEvents } from "../types/misc";
 import { planEvents, planContracts } from "../types/plan";
 import { mediaContracts } from "../types/media";
+import { audioContracts, audioSendContracts } from "../types/audio";
 import {
   imageGenerationContracts,
   imageGenerationEvents,
@@ -113,6 +114,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(miscContracts),
   ...getInvokeChannels(planContracts),
   ...getInvokeChannels(mediaContracts),
+  ...getInvokeChannels(audioContracts),
   ...getInvokeChannels(appBlueprintContracts),
   ...getInvokeChannels(appCollectionContracts),
   ...getInvokeChannels(terminalContracts),
@@ -137,6 +139,7 @@ export const VALID_INVOKE_CHANNELS = [
  */
 export const VALID_SEND_CHANNELS = [
   ...getSendChannels(firstPromptSendContracts),
+  ...getSendChannels(audioSendContracts),
 ] as const;
 
 // =============================================================================

@@ -116,4 +116,21 @@ describe("createDyadAgent", () => {
       "http://127.0.0.1:10808",
     );
   });
+
+  it("applies an internal agent output cap", async () => {
+    runtime.buildStreamOptions.mockResolvedValue({ maxTokens: 16_000 });
+
+    await createDyadAgent({
+      model,
+      settings: settings(),
+      chatMode: "ask",
+      systemPrompt: "bounded sub-agent",
+      maxTokens: 4_000,
+    });
+
+    expect(runtime.createDyadStreamFn).toHaveBeenCalledWith(
+      { maxTokens: 4_000 },
+      undefined,
+    );
+  });
 });

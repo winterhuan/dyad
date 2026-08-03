@@ -111,6 +111,32 @@ export type DeleteCustomThemeParams = z.infer<
   typeof DeleteCustomThemeParamsSchema
 >;
 
+export const GenerateThemePromptParamsSchema = z.object({
+  inspiration: z.string().trim().min(1).max(2_000),
+  websiteUrl: z.url().optional(),
+  images: z
+    .array(
+      z.object({
+        data: z.string().max(14 * 1024 * 1024),
+        mimeType: z.string().regex(/^image\/[a-z0-9.+-]+$/i),
+      }),
+    )
+    .max(5)
+    .optional(),
+  generationMode: z.enum(["inspired", "high-fidelity"]).optional(),
+  model: z
+    .object({
+      name: z.string().min(1),
+      provider: z.string().min(1),
+      customModelId: z.number().optional(),
+    })
+    .optional(),
+});
+
+export type GenerateThemePromptParams = z.infer<
+  typeof GenerateThemePromptParamsSchema
+>;
+
 // =============================================================================
 // Template/Theme Contracts
 // =============================================================================
@@ -169,6 +195,12 @@ export const templateContracts = {
     channel: "delete-custom-theme",
     input: DeleteCustomThemeParamsSchema,
     output: z.void(),
+  }),
+
+  generateThemePrompt: defineContract({
+    channel: "generate-theme-prompt",
+    input: GenerateThemePromptParamsSchema,
+    output: z.object({ prompt: z.string() }),
   }),
 } as const;
 

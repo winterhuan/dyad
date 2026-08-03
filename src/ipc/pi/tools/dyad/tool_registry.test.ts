@@ -66,4 +66,20 @@ describe("agent tool consent defaults", () => {
       } as unknown as AgentContext),
     ).toBe(false);
   });
+
+  it("registers migrated read-only research and sandbox tools", () => {
+    for (const name of [
+      "explore_code",
+      "explore_chat_history",
+      "execute_sandbox_script",
+      "web_crawl",
+      "code_search",
+    ]) {
+      const tool = TOOL_DEFINITIONS.find(
+        (candidate) => candidate.name === name,
+      );
+      expect(tool, name).toBeDefined();
+      expect(tool?.modifiesState).not.toBe(true);
+    }
+  });
 });
